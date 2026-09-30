@@ -1,0 +1,8 @@
+[Unit]
+Description=Rocket demo page nightly publish (fetch, score, render, push)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/svarkor/Rocket
+ExecStart=/usr/bin/python3 /home/svarkor/Rocket/source/scripts/generate_demo_page.py
+# The generator commits index.html and pushes to bryn1 main itself.
