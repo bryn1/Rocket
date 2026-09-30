@@ -1,69 +1,68 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rocket — top 25 (full-mass store)</title><style>
-:root {
-  --bg:#0f1115; --surface:#181b21; --surface2:#1f232c;
-  --text:#e8eaed; --muted:#9aa0a8; --border:#2a2e36;
-  --accent:#4f8cff;
-  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
-  --space-6:24px; --space-8:32px; --radius:8px;
+<!DOCTYPE html>
+<html lang="sv"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rocket — Stock Scanner Demo</title><style>
+body{background:#0d0d1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;margin:0;padding:24px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{color:#00e676;margin:0}h2{color:#00e676;border-bottom:1px solid #2a2a3e;padding-bottom:6px}
+.sub{color:#9e9e9e;font-size:14px;margin:6px 0 18px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tab-btn{background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:14px}
+.tab-btn.active{background:#00e67622;border-color:#00e676;color:#00e676}
+table{width:100%;border-collapse:collapse;background:#1a1a2e;border-radius:8px;overflow:hidden}
+th{background:#12122a;color:#9e9e9e;text-align:left;padding:10px 12px;font-size:13px}
+td{padding:9px 12px;border-top:1px solid #2a2a3e;font-size:14px}
+tr:hover td{background:#22223c}
+.buy{color:#00e676;font-weight:bold}.sell{color:#ef5350;font-weight:bold}.hold{color:#ffb74d}
+.score-hi{color:#00e676;font-weight:bold}.score-mid{color:#ffb74d;font-weight:bold}.score-lo{color:#ef5350;font-weight:bold}
+input[type=text]{background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:8px 12px;border-radius:6px;width:220px;font-size:14px}
+.footer{color:#616161;font-size:12px;margin-top:22px}
+.region-note{color:#9e9e9e;font-size:13px;margin:4px 0 10px}
+</style></head>
+<body><div class="wrap">
+<header class="page"><h1>Rocket — Stock Scanner Demo</h1>
+<div class="sub">Läs-only demo · 0 tickers i 3 regioner · scorerade med Rocket-score · data hämtad 2026-09-30 19:16 UTC</div></header>
+<h2>Rankings</h2>
+<div style="margin-bottom:10px"><input type="text" placeholder="Filtrera ticker…" oninput="filterTable(this,'panel-all')"></div>
+<div class="tabs" role="tablist"><button class="tab-btn active" onclick="showRegion('all',this)">Alla (0)</button><button class="tab-btn" onclick="showRegion('usa',this)">USA (0)</button><button class="tab-btn" onclick="showRegion('sweden',this)">Sverige (0)</button><button class="tab-btn" onclick="showRegion('germany',this)">Tyskland (0)</button></div>
+<div class="region-panel" id="panel-all">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div><div class="region-panel" id="panel-usa">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div><div class="region-panel" id="panel-sweden">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div><div class="region-panel" id="panel-germany">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div>
+<h2>Top 10 — köpsvy</h2>
+<div class="table-wrap"><table><thead><tr><th>Ticker</th><th>Signal</th><th>Overall</th></tr></thead>
+<tbody></tbody></table></div>
+<h2>Universe</h2>
+<div class="region-note"><b>USA</b> (0): </div><div class="region-note"><b>Sverige</b> (0): </div><div class="region-note"><b>Tyskland</b> (0): </div>
+<div class="footer">Genererad 2026-09-30 19:16 UTC av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).</div>
+</div><script>
+function showRegion(id, btn){
+  document.querySelectorAll('.region-panel').forEach(p=>p.style.display='none');
+  document.getElementById('panel-'+id).style.display='block';
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
 }
-* { box-sizing:border-box; }
-body { margin:0; background:var(--bg); color:var(--text); font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif; }
-.wrap { max-width:1080px; margin:0 auto; padding:var(--space-6) var(--space-4); }
-header.page { margin-bottom:var(--space-6); }
-header.page h1 { font-size:26px; margin:0 0 var(--space-1); }
-header.page .sub { color:var(--muted); font-size:13px; }
-.cards { display:flex; flex-wrap:wrap; gap:var(--space-4); margin-bottom:var(--space-6); }
-.card { flex:1 1 150px; background:var(--surface2); border:1px solid var(--border); border-radius:var(--radius); padding:var(--space-4); display:flex; flex-direction:column; gap:var(--space-1); }
-.card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-.card .v { font-size:20px; font-weight:700; }
-.table-wrap { overflow-x:auto; }
-table.board { width:100%; border-collapse:collapse; min-width:620px; }
-table.board th, table.board td { text-align:left; padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); font-size:14px; }
-table.board th { color:var(--muted); font-weight:600; background:var(--surface2); }
-td { font-variant-numeric:tabular-nums; }
-.provenance { margin-top:var(--space-6); padding:var(--space-4) var(--space-6); background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); display:flex; flex-wrap:wrap; gap:var(--space-3) var(--space-6); align-items:center; }
-.p-badge { background:var(--surface2); border:1px solid var(--accent); color:var(--accent); padding:var(--space-1) var(--space-2); border-radius:var(--radius); font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase; }
-.p-meta { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-4); font-size:13px; color:var(--muted); }
-.p-item { display:inline-flex; gap:var(--space-1); }
-.p-val { color:var(--text); }
-.rocket-nav{display:flex;flex-wrap:wrap;gap:var(--space-2);margin:0 0 var(--space-6);padding:var(--space-2);border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);}
-.rocket-nav a{color:var(--muted);text-decoration:none;padding:var(--space-2) var(--space-3);border-radius:var(--radius);font-size:14px;}
-.rocket-nav a:hover{color:var(--text);}
-.rocket-nav a.active{color:var(--accent);background:var(--surface2);font-weight:600;border:1px solid var(--border);}
-@media (max-width:640px) { header.page h1 { font-size:21px; } }
-</style></head><body><div class="wrap"><nav class="rocket-nav" aria-label="Huvudnavigering"><a href="index.html" class="active" aria-current="page">Top 25</a><a href="region-top25.html">Regioner</a><a href="indicators.html">Indikatorer</a><a href="portfolio.html">Portfolio</a></nav><header class="page"><h1>Rocket — Top 25</h1><div class="sub">Authentic top-25 from the full mass store · 11,795 tickers scored over 2,851,917 OHLCV rows · as of 2026-08-29</div></header>
-<div class="cards">
-  <div class="card"><span class="k">Top K</span><span class="v">25</span></div>
-  <div class="card"><span class="k">Tickers scored</span><span class="v">11,795</span></div>
-  <div class="card"><span class="k">OHLCV rows</span><span class="v">2,851,917</span></div>
-  <div class="card"><span class="k">Regions</span><span class="v">AUSTRALIA 1 · CANADA 2 · UK 4 · USA 18</span></div>
-</div>
-<div class="table-wrap"><table class="board"><thead><tr><th>Rank</th><th>Ticker</th><th>Region</th><th>Score</th><th>Price</th><th>Obs</th><th>Last date</th></tr></thead><tbody>
-<tr><td>1</td><td>ROIV</td><td>usa</td><td>88.18</td><td>36.83</td><td>252</td><td>2026-08-27</td></tr>
-<tr><td>2</td><td>CLMT</td><td>usa</td><td>87.61</td><td>47.79</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>3</td><td>ASX</td><td>usa</td><td>87.08</td><td>37.26</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>4</td><td>BDT.TO</td><td>canada</td><td>86.87</td><td>67.35</td><td>252</td><td>2026-08-26</td></tr>
-<tr><td>5</td><td>ATI</td><td>usa</td><td>86.53</td><td>212.86</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>6</td><td>MLX.AX</td><td>australia</td><td>86.34</td><td>1.92</td><td>255</td><td>2026-08-27</td></tr>
-<tr><td>7</td><td>SAGA.L</td><td>uk</td><td>86.00</td><td>695.00</td><td>255</td><td>2026-08-27</td></tr>
-<tr><td>8</td><td>AXGN</td><td>usa</td><td>86.00</td><td>51.58</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>9</td><td>SPHR</td><td>usa</td><td>85.97</td><td>155.20</td><td>252</td><td>2026-08-27</td></tr>
-<tr><td>10</td><td>NESR</td><td>usa</td><td>85.76</td><td>33.64</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>11</td><td>AMAT</td><td>usa</td><td>85.38</td><td>479.76</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>12</td><td>SEPL.L</td><td>uk</td><td>85.27</td><td>644.56</td><td>255</td><td>2026-08-27</td></tr>
-<tr><td>13</td><td>UMC</td><td>usa</td><td>84.59</td><td>18.86</td><td>252</td><td>2026-08-27</td></tr>
-<tr><td>14</td><td>NGL</td><td>usa</td><td>84.48</td><td>17.20</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>15</td><td>ECO</td><td>usa</td><td>84.42</td><td>62.28</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>16</td><td>ACG.L</td><td>uk</td><td>84.23</td><td>2,074.00</td><td>255</td><td>2026-08-27</td></tr>
-<tr><td>17</td><td>INTC</td><td>usa</td><td>84.21</td><td>88.24</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>18</td><td>CMCX.L</td><td>uk</td><td>84.02</td><td>717.00</td><td>255</td><td>2026-08-27</td></tr>
-<tr><td>19</td><td>MAU.TO</td><td>canada</td><td>83.95</td><td>20.00</td><td>252</td><td>2026-08-26</td></tr>
-<tr><td>20</td><td>FET</td><td>usa</td><td>83.94</td><td>75.60</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>21</td><td>RVMD</td><td>usa</td><td>83.90</td><td>220.91</td><td>252</td><td>2026-08-27</td></tr>
-<tr><td>22</td><td>AMD</td><td>usa</td><td>83.73</td><td>480.93</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>23</td><td>DELL</td><td>usa</td><td>83.68</td><td>463.82</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>24</td><td>IMVT</td><td>usa</td><td>83.66</td><td>43.89</td><td>251</td><td>2026-08-26</td></tr>
-<tr><td>25</td><td>MRVI</td><td>usa</td><td>83.57</td><td>8.90</td><td>251</td><td>2026-08-26</td></tr>
-</tbody></table></div>
-<div class="provenance"><span class="p-badge">authentic · dobbie 766.2 PASS</span><div class="p-meta"><span class="p-item">source: teddy/766.1 + store/historical/*.parquet</span><span class="p-item">generated: 2026-08-29T17:23Z</span><span class="p-item">independent verify: 766.2 (208 assertions, exit 0)</span></div></div>
-</div></body></html>
+function filterTable(input, panelId){
+  const q = input.value.toUpperCase();
+  document.querySelectorAll('#'+panelId+' tbody tr').forEach(tr=>{
+    tr.style.display = tr.cells[0].textContent.toUpperCase().includes(q) ? '' : 'none';
+  });
+}
+</script></body></html>
