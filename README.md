@@ -6,13 +6,13 @@ repository holds the scanner engine and a hosted, read-only demo of its output.
 
 ## The Rocket score
 
-For each ticker the engine runs **29 technical indicators** across four families and folds
+For each ticker the engine runs **34 technical indicators** across four families and folds
 them into a single evidence-weighted score:
 
 | Family | Indicators | Examples |
 |--------|-----------:|----------|
-| Momentum   | 6  | RSI, MACD, ROC, Stochastic, Williams %R, CCI |
-| Trend      | 17 | EMA crossover, ADX, EMA 9/21/50/200, Ichimoku, Supertrend, Parabolic SAR, chart patterns |
+| Momentum   | 8  | RSI, MACD, ROC, Stochastic, Williams %R, CCI, Fear & Greed, Chimera |
+| Trend      | 17 | EMA crossover, ADX, EMA 9/21/50/200, Ichimoku, Supertrend, Parabolic SAR, chart patterns, Echo Chamber, Match Finder, uFVG |
 | Volatility | 3  | Bollinger Bands, ATR, Donchian Channel |
 | Volume     | 3  | OBV, MFI, VWAP |
 

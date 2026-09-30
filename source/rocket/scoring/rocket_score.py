@@ -29,6 +29,9 @@ from ..technical.trend import EMACrossover, ADX, EMA9, EMA21, EMA50, EMA200
 from ..technical.volatility import BollingerBands, ATR, DonchianChannel
 from ..technical.volume import OBV, MFI, VWAPIndicator
 from ..technical.advanced import IchimokuCloud, Supertrend, AutoTrend, RubeGoldberg, ParabolicSAR
+from ..technical.pattern_match import EchoChamber, MatchFinder
+from ..technical.composites import FearGreed, Chimera
+from ..technical.ufvg import UnFairValueGapDetector
 from ..technical.patterns import (
     DoubleTopBottom, HeadShoulders, WedgePattern,
     AutoFractal, CupAndHandle, PatternDetectorCombined,
@@ -53,6 +56,7 @@ INDICATORS = [
     DoubleTopBottom(), HeadShoulders(),
     WedgePattern(), AutoFractal(), CupAndHandle(),
     PatternDetectorCombined(),
+    EchoChamber(), MatchFinder(), FearGreed(), Chimera(), UnFairValueGapDetector(),
     # Volatility (3) — risk-only, NOT in direction voting
     BollingerBands(), ATR(), DonchianChannel(),
     # Volume (3)
@@ -71,6 +75,7 @@ DIRECTION_INDICATORS = [
     DoubleTopBottom(), HeadShoulders(),
     WedgePattern(), AutoFractal(), CupAndHandle(),
     PatternDetectorCombined(),
+    EchoChamber(), MatchFinder(), FearGreed(), Chimera(), UnFairValueGapDetector(),
     # Volume (3)
     OBV(), MFI(), VWAPIndicator(),
 ]
@@ -98,6 +103,11 @@ _NAME_TO_FAMILY = {
     "AutoTrend": FamilyName.TREND,
     "RubeGoldberg": FamilyName.TREND,
     "Parabolic SAR": FamilyName.TREND,
+    "EchoChamber": FamilyName.TREND,
+    "MatchFinder": FamilyName.TREND,
+    "UnFairValueGap": FamilyName.TREND,
+    "FearGreed": FamilyName.MOMENTUM,
+    "Chimera": FamilyName.MOMENTUM,
     "DoubleTopBottom": FamilyName.TREND,
     "HeadShoulders": FamilyName.TREND,
     "WedgePattern": FamilyName.TREND,

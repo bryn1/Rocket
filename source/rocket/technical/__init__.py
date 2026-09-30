@@ -5,6 +5,9 @@ from .trend import EMACrossover, ADX, EMA9, EMA21, EMA50, EMA200
 from .volatility import BollingerBands, ATR, DonchianChannel
 from .volume import OBV, MFI, VWAPIndicator
 from .advanced import IchimokuCloud, Supertrend, AutoTrend, RubeGoldberg, ParabolicSAR
+from .pattern_match import EchoChamber, MatchFinder
+from .composites import FearGreed, Chimera
+from .ufvg import UnFairValueGapDetector
 from .patterns import (
     ZigZagDetector,
     DoubleTopBottom,
