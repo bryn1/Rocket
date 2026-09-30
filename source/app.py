@@ -101,6 +101,7 @@ _REGION_MAP = {
     "usa": "us",
     "china": "asia",
     "india": "asia",
+    "germany": "eu",
 }
 
 
