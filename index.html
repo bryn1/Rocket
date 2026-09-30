@@ -1,160 +1,68 @@
-<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Rocket — read-only demo snapshot</title><style>
-:root {
-  --bg:#0f1115; --surface:#181b21; --surface2:#1f232c;
-  --text:#e8eaed; --muted:#9aa0a8; --border:#2a2e36;
-  --accent:#4f8cff; --ok:#3fb96e; --warn:#e0a83a; --err:#e05d5d;
-  --space-1:4px; --space-2:8px; --space-3:12px; --space-4:16px;
-  --space-6:24px; --space-8:32px; --radius:8px;
+<!DOCTYPE html>
+<html lang="sv"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Rocket — Stock Scanner Demo</title><style>
+body{background:#0d0d1a;color:#e0e0e0;font-family:'Segoe UI',system-ui,sans-serif;margin:0;padding:24px}
+.wrap{max-width:1100px;margin:0 auto}
+h1{color:#00e676;margin:0}h2{color:#00e676;border-bottom:1px solid #2a2a3e;padding-bottom:6px}
+.sub{color:#9e9e9e;font-size:14px;margin:6px 0 18px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
+.tab-btn{background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:14px}
+.tab-btn.active{background:#00e67622;border-color:#00e676;color:#00e676}
+table{width:100%;border-collapse:collapse;background:#1a1a2e;border-radius:8px;overflow:hidden}
+th{background:#12122a;color:#9e9e9e;text-align:left;padding:10px 12px;font-size:13px}
+td{padding:9px 12px;border-top:1px solid #2a2a3e;font-size:14px}
+tr:hover td{background:#22223c}
+.buy{color:#00e676;font-weight:bold}.sell{color:#ef5350;font-weight:bold}.hold{color:#ffb74d}
+.score-hi{color:#00e676;font-weight:bold}.score-mid{color:#ffb74d;font-weight:bold}.score-lo{color:#ef5350;font-weight:bold}
+input[type=text]{background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:8px 12px;border-radius:6px;width:220px;font-size:14px}
+.footer{color:#616161;font-size:12px;margin-top:22px}
+.region-note{color:#9e9e9e;font-size:13px;margin:4px 0 10px}
+</style></head>
+<body><div class="wrap">
+<header class="page"><h1>Rocket — Stock Scanner Demo</h1>
+<div class="sub">Läs-only demo · 0 tickers i 3 regioner · scorerade med Rocket-score · data hämtad 2026-09-30 19:16 UTC</div></header>
+<h2>Rankings</h2>
+<div style="margin-bottom:10px"><input type="text" placeholder="Filtrera ticker…" oninput="filterTable(this,'panel-all')"></div>
+<div class="tabs" role="tablist"><button class="tab-btn active" onclick="showRegion('all',this)">Alla (0)</button><button class="tab-btn" onclick="showRegion('usa',this)">USA (0)</button><button class="tab-btn" onclick="showRegion('sweden',this)">Sverige (0)</button><button class="tab-btn" onclick="showRegion('germany',this)">Tyskland (0)</button></div>
+<div class="region-panel" id="panel-all">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div><div class="region-panel" id="panel-usa">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div><div class="region-panel" id="panel-sweden">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div><div class="region-panel" id="panel-germany">
+<div class="table-wrap"><table><thead><tr>
+<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>
+<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>
+</tr></thead><tbody>
+</tbody></table></div></div>
+<h2>Top 10 — köpsvy</h2>
+<div class="table-wrap"><table><thead><tr><th>Ticker</th><th>Signal</th><th>Overall</th></tr></thead>
+<tbody></tbody></table></div>
+<h2>Universe</h2>
+<div class="region-note"><b>USA</b> (0): </div><div class="region-note"><b>Sverige</b> (0): </div><div class="region-note"><b>Tyskland</b> (0): </div>
+<div class="footer">Genererad 2026-09-30 19:16 UTC av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).</div>
+</div><script>
+function showRegion(id, btn){
+  document.querySelectorAll('.region-panel').forEach(p=>p.style.display='none');
+  document.getElementById('panel-'+id).style.display='block';
+  document.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  btn.classList.add('active');
 }
-* { box-sizing:border-box; }
-body {
-  margin:0; background:var(--bg); color:var(--text);
-  font:15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+function filterTable(input, panelId){
+  const q = input.value.toUpperCase();
+  document.querySelectorAll('#'+panelId+' tbody tr').forEach(tr=>{
+    tr.style.display = tr.cells[0].textContent.toUpperCase().includes(q) ? '' : 'none';
+  });
 }
-.wrap { max-width:1080px; margin:0 auto; padding:var(--space-6) var(--space-4); }
-header.page { margin-bottom:var(--space-6); }
-header.page h1 { font-size:26px; margin:0 0 var(--space-1); }
-header.page .sub { color:var(--muted); font-size:13px; }
-.tabs { margin:var(--space-4) 0 var(--space-6); }
-.tabs ul { list-style:none; margin:0; padding:0; display:flex; flex-wrap:wrap; gap:var(--space-1); }
-.tab-link {
-  display:inline-block; padding:var(--space-2) var(--space-4);
-  color:var(--muted); text-decoration:none; border:1px solid var(--border);
-  border-radius:var(--radius) var(--radius) 0 0; background:var(--surface);
-}
-.tab-link:hover, .tab-link:focus-visible { color:var(--text); border-color:var(--accent); }
-.tab-link[aria-current="page"] { color:var(--text); background:var(--surface2); border-bottom-color:var(--surface2); }
-.tab-panel { background:var(--surface); border:1px solid var(--border); border-radius:var(--radius); padding:var(--space-6); }
-.tab-panel h2 { margin:0 0 var(--space-4); font-size:20px; }
-.table-wrap { overflow-x:auto; }
-table.board { width:100%; border-collapse:collapse; min-width:560px; }
-table.board th, table.board td { text-align:left; padding:var(--space-2) var(--space-3); border-bottom:1px solid var(--border); font-size:14px; }
-table.board th { color:var(--muted); font-weight:600; background:var(--surface2); }
-td { font-variant-numeric:tabular-nums; }
-.empty { color:var(--muted); font-style:italic; }
-.cards { display:flex; flex-wrap:wrap; gap:var(--space-4); margin-bottom:var(--space-6); }
-.card {
-  flex:1 1 140px; background:var(--surface2); border:1px solid var(--border);
-  border-radius:var(--radius); padding:var(--space-4);
-  display:flex; flex-direction:column; gap:var(--space-1);
-}
-.card .k { color:var(--muted); font-size:12px; text-transform:uppercase; letter-spacing:.04em; }
-.card .v { font-size:20px; font-weight:700; }
-dl.settings { display:grid; grid-template-columns:max-content 1fr; gap:var(--space-2) var(--space-6); }
-dl.settings dt { color:var(--muted); }
-dl.settings dd { margin:0; }
-.provenance {
-  margin-top:var(--space-6); padding:var(--space-4) var(--space-6);
-  background:var(--surface); border:1px solid var(--border); border-radius:var(--radius);
-  display:flex; flex-wrap:wrap; gap:var(--space-3) var(--space-6); align-items:center;
-}
-.p-badge {
-  background:var(--surface2); border:1px solid var(--accent); color:var(--accent);
-  padding:var(--space-1) var(--space-2); border-radius:var(--radius);
-  font-size:12px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
-}
-.p-meta { display:flex; flex-wrap:wrap; gap:var(--space-2) var(--space-4); font-size:13px; color:var(--muted); }
-.p-item { display:inline-flex; gap:var(--space-1); }
-.p-val { color:var(--text); }
-.p-tabs { font-size:13px; color:var(--muted); }
-a { color:var(--accent); }
-@media (max-width:640px) {
-  .tab-link { flex:1 1 40%; text-align:center; }
-  header.page h1 { font-size:21px; }
-}
-</style></head><body><div class="wrap"><header class="page"><h1>Rocket — Stock Scanner Demo</h1><div class="sub">Read-only demo snapshot · 35 tickers across 3 regions (Germany, Sweden, USA) · scored with the Rocket score · as of 2026-08-12</div></header><nav class="tabs" role="tablist" aria-label="Dashboard tabs"><ul><li class="tab-item"><a class="tab-link" href="#tab-rankings" aria-label="Tab: rankings" role="tab" aria-current="page">rankings</a></li><li class="tab-item"><a class="tab-link" href="#tab-detail" aria-label="Tab: detail" role="tab">detail</a></li><li class="tab-item"><a class="tab-link" href="#tab-settings" aria-label="Tab: settings" role="tab">settings</a></li><li class="tab-item"><a class="tab-link" href="#tab-top-signals" aria-label="Tab: top-signals" role="tab">top-signals</a></li></ul></nav><section id="tab-rankings" class="tab-panel" aria-label="rankings"><h2>Rankings</h2><div class="table-wrap"><table class="board"><thead><tr><th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th><th>Trend</th><th>Volatility</th><th>Volume</th></tr></thead><tbody><tr><td>MSFT</td><td>BUY</td><td>79.67</td><td>98.92</td><td>100.0</td><td>0.0</td><td>100.0</td></tr>
-<tr><td>SAAB-B.ST</td><td>BUY</td><td>77.64</td><td>100.0</td><td>100.0</td><td>24.78</td><td>63.43</td></tr>
-<tr><td>SAP.DE</td><td>BUY</td><td>72.01</td><td>100.0</td><td>100.0</td><td>0.0</td><td>60.04</td></tr>
-<tr><td>DBK.DE</td><td>BUY</td><td>71.41</td><td>68.98</td><td>74.39</td><td>57.23</td><td>84.75</td></tr>
-<tr><td>ALV.DE</td><td>BUY</td><td>71.08</td><td>57.69</td><td>60.63</td><td>78.5</td><td>99.43</td></tr>
-<tr><td>DIS</td><td>BUY</td><td>67.1</td><td>62.25</td><td>71.99</td><td>46.4</td><td>87.74</td></tr>
-<tr><td>SIE.DE</td><td>BUY</td><td>66.78</td><td>63.72</td><td>62.61</td><td>49.79</td><td>94.6</td></tr>
-<tr><td>WMT</td><td>BUY</td><td>63.13</td><td>59.17</td><td>67.72</td><td>60.78</td><td>64.51</td></tr>
-<tr><td>NVDA</td><td>BUY</td><td>63.09</td><td>74.86</td><td>87.69</td><td>24.96</td><td>46.69</td></tr>
-<tr><td>XOM</td><td>BUY</td><td>63.05</td><td>77.43</td><td>67.58</td><td>56.19</td><td>41.53</td></tr>
-<tr><td>CSCO</td><td>BUY</td><td>61.81</td><td>62.73</td><td>83.03</td><td>40.06</td><td>50.34</td></tr>
-<tr><td>AMZN</td><td>BUY</td><td>60.98</td><td>62.49</td><td>74.11</td><td>0.0</td><td>100.0</td></tr>
-<tr><td>MA</td><td>BUY</td><td>57.7</td><td>52.56</td><td>52.14</td><td>59.13</td><td>72.3</td></tr>
-<tr><td>BAC</td><td>BUY</td><td>57.16</td><td>73.59</td><td>70.01</td><td>70.38</td><td>0.0</td></tr>
-<tr><td>DTE.DE</td><td>BUY</td><td>56.69</td><td>53.68</td><td>62.26</td><td>31.6</td><td>77.95</td></tr>
-<tr><td>JPM</td><td>BUY</td><td>55.09</td><td>73.31</td><td>67.93</td><td>63.61</td><td>0.0</td></tr>
-<tr><td>BMW.DE</td><td>BUY</td><td>54.97</td><td>57.22</td><td>54.0</td><td>58.76</td><td>49.24</td></tr>
-<tr><td>CRM</td><td>BUY</td><td>53.57</td><td>82.83</td><td>84.5</td><td>9.69</td><td>7.16</td></tr>
-<tr><td>BAS.DE</td><td>BUY</td><td>52.79</td><td>59.71</td><td>64.72</td><td>60.42</td><td>16.89</td></tr>
-<tr><td>ATCO-A.ST</td><td>BUY</td><td>52.61</td><td>71.84</td><td>69.72</td><td>50.71</td><td>0.0</td></tr>
-<tr><td>SEB-A.ST</td><td>BUY</td><td>49.7</td><td>67.55</td><td>53.68</td><td>60.14</td><td>6.51</td></tr>
-<tr><td>HD</td><td>HOLD</td><td>49.48</td><td>50.26</td><td>53.56</td><td>47.05</td><td>44.63</td></tr>
-<tr><td>PG</td><td>SELL</td><td>48.92</td><td>41.73</td><td>40.75</td><td>65.7</td><td>55.18</td></tr>
-<tr><td>ASSA-B.ST</td><td>BUY</td><td>48.71</td><td>63.58</td><td>60.9</td><td>56.84</td><td>0.0</td></tr>
-<tr><td>ADBE</td><td>BUY</td><td>47.71</td><td>73.26</td><td>75.08</td><td>0.0</td><td>16.03</td></tr>
-<tr><td>JNJ</td><td>BUY</td><td>47.55</td><td>55.42</td><td>55.86</td><td>57.97</td><td>12.85</td></tr>
-<tr><td>SWED-A.ST</td><td>BUY</td><td>46.39</td><td>54.49</td><td>55.42</td><td>66.28</td><td>0.83</td></tr>
-<tr><td>VOW3.DE</td><td>BUY</td><td>44.4</td><td>52.28</td><td>47.21</td><td>51.84</td><td>20.94</td></tr>
-<tr><td>V</td><td>SELL</td><td>43.39</td><td>45.7</td><td>46.48</td><td>65.69</td><td>12.97</td></tr>
-<tr><td>AAPL</td><td>SELL</td><td>39.64</td><td>34.33</td><td>20.82</td><td>33.31</td><td>82.17</td></tr>
-<tr><td>META</td><td>SELL</td><td>38.14</td><td>22.54</td><td>31.61</td><td>18.27</td><td>91.2</td></tr>
-<tr><td>IFX.DE</td><td>SELL</td><td>36.45</td><td>38.49</td><td>52.2</td><td>0.0</td><td>46.21</td></tr>
-<tr><td>GOOGL</td><td>SELL</td><td>36.19</td><td>36.97</td><td>45.22</td><td>6.95</td><td>50.74</td></tr>
-<tr><td>UNH</td><td>SELL</td><td>33.63</td><td>39.85</td><td>35.79</td><td>54.69</td><td>0.0</td></tr>
-<tr><td>ERIC-B.ST</td><td>SELL</td><td>27.64</td><td>24.68</td><td>63.55</td><td>5.88</td><td>0.0</td></tr></tbody></table></div></section><section id="tab-top25-buy" class="tab-panel" aria-label="top25-buy"><h2>Top 25 — köpsvy</h2><div class="table-wrap"><table class="board"><thead><tr><th>Rank</th><th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th><th>Trend</th><th>Volatility</th><th>Volume</th></tr></thead><tbody><tr><td>1</td><td>MSFT</td><td>BUY</td><td>79.67</td><td>98.92</td><td>100.0</td><td>0.0</td><td>100.0</td></tr>
-<tr><td>2</td><td>SAAB-B.ST</td><td>BUY</td><td>77.64</td><td>100.0</td><td>100.0</td><td>24.78</td><td>63.43</td></tr>
-<tr><td>3</td><td>SAP.DE</td><td>BUY</td><td>72.01</td><td>100.0</td><td>100.0</td><td>0.0</td><td>60.04</td></tr>
-<tr><td>4</td><td>DBK.DE</td><td>BUY</td><td>71.41</td><td>68.98</td><td>74.39</td><td>57.23</td><td>84.75</td></tr>
-<tr><td>5</td><td>ALV.DE</td><td>BUY</td><td>71.08</td><td>57.69</td><td>60.63</td><td>78.5</td><td>99.43</td></tr>
-<tr><td>6</td><td>DIS</td><td>BUY</td><td>67.1</td><td>62.25</td><td>71.99</td><td>46.4</td><td>87.74</td></tr>
-<tr><td>7</td><td>SIE.DE</td><td>BUY</td><td>66.78</td><td>63.72</td><td>62.61</td><td>49.79</td><td>94.6</td></tr>
-<tr><td>8</td><td>WMT</td><td>BUY</td><td>63.13</td><td>59.17</td><td>67.72</td><td>60.78</td><td>64.51</td></tr>
-<tr><td>9</td><td>NVDA</td><td>BUY</td><td>63.09</td><td>74.86</td><td>87.69</td><td>24.96</td><td>46.69</td></tr>
-<tr><td>10</td><td>XOM</td><td>BUY</td><td>63.05</td><td>77.43</td><td>67.58</td><td>56.19</td><td>41.53</td></tr>
-<tr><td>11</td><td>CSCO</td><td>BUY</td><td>61.81</td><td>62.73</td><td>83.03</td><td>40.06</td><td>50.34</td></tr>
-<tr><td>12</td><td>AMZN</td><td>BUY</td><td>60.98</td><td>62.49</td><td>74.11</td><td>0.0</td><td>100.0</td></tr>
-<tr><td>13</td><td>MA</td><td>BUY</td><td>57.7</td><td>52.56</td><td>52.14</td><td>59.13</td><td>72.3</td></tr>
-<tr><td>14</td><td>BAC</td><td>BUY</td><td>57.16</td><td>73.59</td><td>70.01</td><td>70.38</td><td>0.0</td></tr>
-<tr><td>15</td><td>DTE.DE</td><td>BUY</td><td>56.69</td><td>53.68</td><td>62.26</td><td>31.6</td><td>77.95</td></tr>
-<tr><td>16</td><td>JPM</td><td>BUY</td><td>55.09</td><td>73.31</td><td>67.93</td><td>63.61</td><td>0.0</td></tr>
-<tr><td>17</td><td>BMW.DE</td><td>BUY</td><td>54.97</td><td>57.22</td><td>54.0</td><td>58.76</td><td>49.24</td></tr>
-<tr><td>18</td><td>CRM</td><td>BUY</td><td>53.57</td><td>82.83</td><td>84.5</td><td>9.69</td><td>7.16</td></tr>
-<tr><td>19</td><td>BAS.DE</td><td>BUY</td><td>52.79</td><td>59.71</td><td>64.72</td><td>60.42</td><td>16.89</td></tr>
-<tr><td>20</td><td>ATCO-A.ST</td><td>BUY</td><td>52.61</td><td>71.84</td><td>69.72</td><td>50.71</td><td>0.0</td></tr>
-<tr><td>21</td><td>SEB-A.ST</td><td>BUY</td><td>49.7</td><td>67.55</td><td>53.68</td><td>60.14</td><td>6.51</td></tr>
-<tr><td>22</td><td>ASSA-B.ST</td><td>BUY</td><td>48.71</td><td>63.58</td><td>60.9</td><td>56.84</td><td>0.0</td></tr>
-<tr><td>23</td><td>ADBE</td><td>BUY</td><td>47.71</td><td>73.26</td><td>75.08</td><td>0.0</td><td>16.03</td></tr>
-<tr><td>24</td><td>JNJ</td><td>BUY</td><td>47.55</td><td>55.42</td><td>55.86</td><td>57.97</td><td>12.85</td></tr>
-<tr><td>25</td><td>SWED-A.ST</td><td>BUY</td><td>46.39</td><td>54.49</td><td>55.42</td><td>66.28</td><td>0.83</td></tr></tbody></table></div></section><section id="tab-detail" class="tab-panel" aria-label="detail"><h2>Detail — MSFT</h2><div class="edge cards"><div class="card"><span class="k">Last close</span><span class="v">492.43</span></div><div class="card"><span class="k">Bars</span><span class="v">23</span></div><div class="card"><span class="k">Overall</span><span class="v">79.67</span></div></div><div class="table-wrap"><table class="board"><thead><tr><th>Indicator</th><th>Category</th><th>Signal</th><th>Score</th></tr></thead><tbody><tr><td>momentum_5d_vs_20d</td><td>momentum</td><td>BUY</td><td>98.92</td></tr>
-<tr><td>close_vs_sma20</td><td>trend</td><td>BUY</td><td>100.0</td></tr>
-<tr><td>daily_return_volatility</td><td>volatility</td><td>HOLD</td><td>0.0</td></tr>
-<tr><td>volume_zish</td><td>volume</td><td>HOLD</td><td>100.0</td></tr></tbody></table></div></section><section id="tab-top-signals" class="tab-panel" aria-label="top-signals"><h2>Top signals</h2><div class="table-wrap"><table class="board"><thead><tr><th>Ticker</th><th>Buy</th><th>Sell</th><th>Hold</th></tr></thead><tbody><tr><td>ADBE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>ALV.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>AMZN</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>ASSA-B.ST</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>ATCO-A.ST</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>BAC</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>BAS.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>BMW.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>CRM</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>CSCO</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>DBK.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>DIS</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>DTE.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>JNJ</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>JPM</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>MSFT</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>NVDA</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>SAAB-B.ST</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>SAP.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>SEB-A.ST</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>SIE.DE</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>SWED-A.ST</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>WMT</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>XOM</td><td>2</td><td>0</td><td>2</td></tr>
-<tr><td>ERIC-B.ST</td><td>1</td><td>1</td><td>2</td></tr>
-<tr><td>HD</td><td>1</td><td>0</td><td>3</td></tr>
-<tr><td>MA</td><td>1</td><td>0</td><td>3</td></tr>
-<tr><td>VOW3.DE</td><td>1</td><td>1</td><td>2</td></tr>
-<tr><td>AAPL</td><td>0</td><td>2</td><td>2</td></tr>
-<tr><td>GOOGL</td><td>0</td><td>2</td><td>2</td></tr>
-<tr><td>IFX.DE</td><td>0</td><td>1</td><td>3</td></tr>
-<tr><td>META</td><td>0</td><td>2</td><td>2</td></tr>
-<tr><td>PG</td><td>0</td><td>2</td><td>2</td></tr>
-<tr><td>UNH</td><td>0</td><td>2</td><td>2</td></tr>
-<tr><td>V</td><td>0</td><td>2</td><td>2</td></tr></tbody></table></div></section><section id="tab-settings" class="tab-panel" aria-label="settings"><h2>Settings &amp; universe</h2><dl class="settings"><dt>Universe</dt><dd>AAPL, ADBE, ALV.DE, AMZN, ASSA-B.ST, ATCO-A.ST, BAC, BAS.DE, BMW.DE, CRM, CSCO, DBK.DE, DIS, DTE.DE, ERIC-B.ST, GOOGL, HD, IFX.DE, JNJ, JPM, MA, META, MSFT, NVDA, PG, SAAB-B.ST, SAP.DE, SEB-A.ST, SIE.DE, SWED-A.ST, UNH, V, VOW3.DE, WMT, XOM</dd><dt>Regions</dt><dd>germany, sweden, usa</dd><dt>Tickers</dt><dd>35</dd><dt>Bars</dt><dd>790</dd><dt>Rendered tabs</dt><dd>rankings, detail, settings, top-signals</dd></dl></section><footer class="provenance" role="banner" aria-label="Snapshot provenance"><div class="p-badge">Read-only offline snapshot</div><div class="p-meta"><span class="p-item">Snapshot <span class="p-val">2026-08-12</span></span><span class="p-item">Generated <span class="p-val">2026-08-24T12:04:20Z</span></span><span class="p-item">Schema v<span class="p-val">2</span></span><span class="p-item">Tickers <span class="p-val">35</span></span><span class="p-item">Bars <span class="p-val">790</span></span><span class="p-item">Universe <span class="p-val">germany, sweden, usa</span></span></div><div class="p-tabs">Tabs: <span class="p-val">rankings, detail, settings, top-signals</span></div></footer></div></body></html>
+</script></body></html>
