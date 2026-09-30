@@ -106,6 +106,12 @@ INDICATOR_FAMILY: dict[str, FamilyName] = {
     "AutoTrend": FamilyName.TREND,
     "RubeGoldberg": FamilyName.TREND,
     "Parabolic SAR": FamilyName.TREND,
+    "EchoChamber": FamilyName.TREND,
+    "MatchFinder": FamilyName.TREND,
+    "UnFairValueGap": FamilyName.TREND,
+    # Composites — Momentum family
+    "FearGreed": FamilyName.MOMENTUM,
+    "Chimera": FamilyName.MOMENTUM,
     # Pattern indicators — TREND family
     "DoubleTopBottom": FamilyName.TREND,
     "HeadShoulders": FamilyName.TREND,

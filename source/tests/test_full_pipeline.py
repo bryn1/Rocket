@@ -55,10 +55,11 @@ def ticker_info():
 
 def test_pipeline_all_indicators_count():
     """Verify all expected indicators are registered."""
-    # 29 total: 6 momentum + 14 trend + 3 vol + 3 volume + 3 pattern
-    assert len(INDICATORS) == 29
-    # 26 direction: 6 momentum + 14 trend + 3 volume
-    assert len(DIRECTION_INDICATORS) == 26
+    # 34 total: 6 momentum + 14 trend + 3 vol + 3 volume + 3 pattern
+    #           + 5 new (EchoChamber, MatchFinder, FearGreed, Chimera, uFVG)
+    assert len(INDICATORS) == 34
+    # 31 direction: 6 momentum + 14 trend + 3 volume + 5 new
+    assert len(DIRECTION_INDICATORS) == 31
 
 
 def test_pipeline_all_indicators_run(up_trend_df, ticker_info):
