@@ -242,6 +242,41 @@ def test_render_empty_backtest_state_and_stale_banner():
     assert demo_render.is_stale("2026-10-02T05:00:00", "") is False
 
 
+def test_publish_sequence_uses_valid_pathspec_stash(monkeypatch):
+    """MC 3874 P1, planted red pre-fix: `git stash push --include-untracked=no`
+    is invalid git (the flag takes no value), so the old stash died silently
+    and `pull --rebase` aborted on the unstaged deliverables the moment the
+    remote moved. This test captures publish()'s argv under a fake run: no
+    --include-untracked anywhere, and the git steps in the safe order."""
+    argvs = []
+    monkeypatch.setattr(gen.subprocess, "run",
+                        lambda argv, **kw: argvs.append(list(argv)))
+    gen.publish()                                     # no network, fake run
+
+    for argv in argvs:
+        assert not any(str(a).startswith("--include-untracked")
+                       for a in argv), f"invalid flag in {argv}"
+
+    def step(pred, start, what):
+        for i in range(start, len(argvs)):
+            if pred(argvs[i]):
+                return i + 1
+        raise AssertionError(f"missing step {what!r} after {start}: {argvs}")
+
+    pos = 0        # pathspec-scoped stash (default: no untracked) — before sync
+    pos = step(lambda a: a[:3] == ["git", "stash", "push"] and "--" in a
+               and "index.html" in a and "indicator_stats.json" in a,
+               pos, "stash push -- index.html indicator_stats.json")
+    pos = step(lambda a: a[:5] == ["git", "pull", "--rebase", "bryn1", "main"],
+               pos, "pull --rebase bryn1 main")
+    pos = step(lambda a: a == ["git", "stash", "pop"], pos, "stash pop")
+    pos = step(lambda a: a[:2] == ["git", "add"] and "index.html" in a
+               and "indicator_stats.json" in a, pos, "add deliverables")
+    pos = step(lambda a: "commit" in a, pos, "commit")
+    step(lambda a: a == ["git", "push", "bryn1", "HEAD:main"], pos,
+         "push bryn1 HEAD:main")
+
+
 def test_render_is_deterministic():
     results = {r: [_mk_row(t) for t in ts] for r, ts in FAKE_UNIVERSE.items()}
     args = (results, "2026-10-02 05:00 UTC", "2026-10-01", SAMPLE_DOC, None)

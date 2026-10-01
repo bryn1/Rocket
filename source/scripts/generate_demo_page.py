@@ -145,9 +145,14 @@ def _guard(html: str, total: int, universe: dict) -> list[str]:
 
 def publish() -> None:
     # Sync with the mirror first (the reconciler may have moved it); unstaged
-    # changes would block the rebase — stash them around it.
-    subprocess.run(["git", "stash", "push", "--include-untracked=no", "-m",
-                    "demo-publish auto-stash"], cwd=REPO_ROOT, check=False)
+    # changes would block the rebase — stash the two deliverables by pathspec
+    # around it. MC 3874: "--include-untracked=no" is invalid git (the flag
+    # takes no value), so the old stash failed silently and the rebase died
+    # on the unstaged files. A pathspec stash excludes untracked by default
+    # — which was always the intent of that bogus flag.
+    subprocess.run(["git", "stash", "push", "-m", "demo-publish auto-stash",
+                    "--", "index.html", "indicator_stats.json"],
+                   cwd=REPO_ROOT, check=False)
     subprocess.run(["git", "pull", "--rebase", "bryn1", "main"],
                    cwd=REPO_ROOT, check=False)
     subprocess.run(["git", "stash", "pop"], cwd=REPO_ROOT, check=False)
