@@ -194,8 +194,12 @@ def render(results: dict[str, list[dict]], as_of: str) -> str:
 
 def publish() -> None:
     # Sync with the mirror first: a remote that moved (e.g. the hosting
-    # reconciler) must not turn the nightly push into a rejection.
+    # reconciler) must not turn the nightly push into a rejection. Unstaged
+    # changes (audit notes etc.) would block the rebase — stash them around it.
+    subprocess.run(["git", "stash", "push", "--include-untracked=no", "-m",
+                    "demo-publish auto-stash"], cwd=REPO_ROOT, check=False)
     subprocess.run(["git", "pull", "--rebase", "bryn1", "main"], cwd=REPO_ROOT, check=False)
+    subprocess.run(["git", "stash", "pop"], cwd=REPO_ROOT, check=False)
     subprocess.run(["git", "add", "index.html"], cwd=REPO_ROOT, check=True)
     subprocess.run(
         ["git", "-c", "user.name=code (MC 3848)", "-c",
