@@ -8,7 +8,7 @@ render is deterministic for fixed inputs.
 from __future__ import annotations
 
 import math
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 from demo_universe import REGION_LABELS
 
@@ -95,17 +95,22 @@ def _netpct(v) -> str:
 
 
 def is_stale(run_iso: str, data_last_bar: str) -> bool:
-    """Freshness rule §5.5: run ts > 26 h newer than the newest bar = stale."""
+    """Freshness rule §5.5, weekday-aware (MC 3874 P2): markets are closed
+    weekends, so stale means the newest bar predates the latest weekday
+    (Mon-Fri) strictly before the fetch date — i.e. data is at least two
+    trading days behind. The 05:00-UTC nightly seeing the previous calendar
+    day's bars is FRESH; a weekend never counts as a missing trading day."""
     if not data_last_bar:
-        return False
+        return False                      # unknown bar: banner stays 'okänd'
     try:
-        run = datetime.strptime(run_iso[:19], "%Y-%m-%dT%H:%M:%S").replace(
-            tzinfo=timezone.utc)
-        bar = datetime.strptime(data_last_bar[:10], "%Y-%m-%d").replace(
-            tzinfo=timezone.utc)
+        bar = datetime.strptime(data_last_bar[:10], "%Y-%m-%d")
+        expected = datetime.strptime(run_iso[:10], "%Y-%m-%d")
     except ValueError:
         return False
-    return (run - bar) > timedelta(hours=26)
+    expected -= timedelta(days=1)
+    while expected.weekday() >= 5:        # Sat/Sun fetch → step back to Friday
+        expected -= timedelta(days=1)
+    return bar < expected
 
 
 def _table(rows: list[dict], panel_id: str) -> str:
@@ -181,7 +186,7 @@ def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
     top10 = all_rows[:10]
     n = len(all_rows)
     regions = list(results.keys())
-    stale = is_stale(_iso_from_display(run_ts), data_last_bar)
+    stale = is_stale(run_ts, data_last_bar)
     last_bar_txt = data_last_bar if data_last_bar else "okänd"
     banner_cls = "sub stale" if stale else "sub"
 
@@ -239,12 +244,3 @@ def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
 {universe_lines}
 <div class="footer">Genererad {run_ts} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
 </div>{JS}</body></html>"""
-
-
-def _iso_from_display(run_ts: str) -> str:
-    """'2026-10-02 05:00 UTC' -> '2026-10-02T05:00:00' for the stale rule."""
-    try:
-        dt = datetime.strptime(run_ts.replace(" UTC", ""), "%Y-%m-%d %H:%M")
-    except ValueError:
-        return run_ts
-    return dt.strftime("%Y-%m-%dT%H:%M:%S")

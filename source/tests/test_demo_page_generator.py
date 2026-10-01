@@ -234,13 +234,43 @@ def test_render_empty_backtest_state_and_stale_banner():
     html = demo_render.render(results, "2026-10-03 05:00 UTC", "2026-10-01",
                               None, None)
     assert "Backtest saknas — publiceras när närmaste löpning lyckats" in html
-    assert 'class="sub stale"' in html      # run - bar > 26 h
+    assert 'class="sub stale"' in html      # Sat run / Thu bar: Fri missing
     fresh = demo_render.render(results, "2026-10-02 00:00 UTC", "2026-10-01",
                                None, None)
     assert 'class="sub stale"' not in fresh and 'id="freshness"' in fresh
-    assert demo_render.is_stale("2026-10-02T05:00:00", "2026-10-01") is True
+    # MC 3874 cycle 2 (DA P2): on HEAD this pin asserted True — the literal
+    # 26 h rule made EVERY normal 05:00-UTC nightly (previous calendar day's
+    # bars) false-alarm stale. Corrected contract: that nightly is FRESH.
+    assert demo_render.is_stale("2026-10-02T05:00:00", "2026-10-01") is False
     assert demo_render.is_stale("2026-10-02T01:00:00", "2026-10-01") is False
     assert demo_render.is_stale("2026-10-02T05:00:00", "") is False
+
+
+def test_is_stale_weekday_rule():
+    """MC 3874 P2: stale = data ≥ 2 trading days behind, NOT "older than
+    26 h" (markets closed weekends). Calendar anchors: 2026-10-01 Thu,
+    02 Fri, 03 Sat, 04 Sun, 05 Mon, 06 Tue."""
+    # Fresh — HEAD's 26 h rule wrongly returned True on each of these:
+    # Fri fetch / Thu bars (the nightly false positive):
+    assert demo_render.is_stale("2026-10-02T05:00:00", "2026-10-01") is False
+    # Sat fetch / Fri bars:
+    assert demo_render.is_stale("2026-10-03T05:00:00", "2026-10-02") is False
+    # Mon fetch / Fri bars (weekend does not count):
+    assert demo_render.is_stale("2026-10-05T05:00:00", "2026-10-02") is False
+    # Sun fetch / Fri bars:
+    assert demo_render.is_stale("2026-10-04T05:00:00", "2026-10-02") is False
+    # Stale — one full trading day missing:
+    # Tue fetch / Fri bars (Mon missed):
+    assert demo_render.is_stale("2026-10-06T05:00:00", "2026-10-02") is True
+    # Mon fetch / Thu bars (Fri missed):
+    assert demo_render.is_stale("2026-10-05T05:00:00", "2026-10-01") is True
+    # a week old:
+    assert demo_render.is_stale("2026-10-05T05:00:00", "2026-09-25") is True
+    # Honest-unknown and bad input keep the existing not-stale behaviour:
+    assert demo_render.is_stale("2026-10-05T05:00:00", "") is False
+    assert demo_render.is_stale("not-a-date", "2026-10-02") is False
+    # render() passes the display string straight through:
+    assert demo_render.is_stale("2026-10-02 05:00 UTC", "2026-10-01") is False
 
 
 def test_publish_sequence_uses_valid_pathspec_stash(monkeypatch):
