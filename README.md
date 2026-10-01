@@ -60,7 +60,7 @@ PYTHONPATH=source python3 -m rocket.backtest.indicator_eval \
     --cache-dir source/data/raw --out indicator_stats.json
 ```
 
-`--tickers MSFT,SAAB_B` (CSV stems) narrows the run; the output is the same schema-v1 JSON
+`--tickers MSFT,SAAB_B_ST` (CSV stems) narrows the run; the output is the same schema-v1 JSON
 artifact the page's Indikatorer tab consumes. Architecture, seams and the hosting contract:
 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
@@ -77,7 +77,7 @@ served — see `hosting.yaml`), so the static hosting alias can never expose eng
   nightly generator)
 - `hosting.yaml` — deployment manifest (static demo; `root: apps/rocket`)
 - `source/` — the full scan engine (not served):
-  - `source/app.py`, `source/server.py` — the Dash dashboard (engine UI; `server.py` is the hosting entrypoint)
+  - `source/app.py`, `source/server.py` — the Dash dashboard (engine UI; not served — the hosted page is static)
   - `source/rocket/scoring/` — the Rocket score (`rocket_score.py`, weighting, risk, confidence)
   - `source/rocket/technical/` — the 34 indicator implementations
   - `source/rocket/dataquality/` — split-adjust, outlier detection, cleaning pipeline, position sizing
