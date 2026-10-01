@@ -221,6 +221,7 @@ def test_render_smoke_markers_and_no_nan():
                    'role="tablist"', 'role="tab"', 'role="tabpanel"'):
         assert marker in html, marker
     assert "NaN" not in html and "None" not in html and "nan" not in html
+    assert ".table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}" in html
     assert "risk-badge" in html             # ATR risk-only marker
     assert "beräkningsfel: 3" in html       # calc_errors surfaced
     assert "Backtest saknas" not in html    # doc present -> no empty text

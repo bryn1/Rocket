@@ -28,6 +28,7 @@ h1{color:#00e676;margin:0}h2{color:#00e676;border-bottom:1px solid #2a2a3e;paddi
 .tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px}
 .tab-btn{background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;padding:8px 18px;border-radius:6px;cursor:pointer;font-size:14px}
 .tab-btn.active{background:#00e67622;border-color:#00e676;color:#00e676}
+.table-wrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
 table{width:100%;border-collapse:collapse;background:#1a1a2e;border-radius:8px;overflow:hidden}
 th{background:#12122a;color:#9e9e9e;text-align:left;padding:10px 12px;font-size:13px}
 td{padding:9px 12px;border-top:1px solid #2a2a3e;font-size:14px}
