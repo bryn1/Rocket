@@ -3,6 +3,9 @@ Description=Rocket demo page nightly publish (fetch, score, render, push)
 
 [Service]
 Type=oneshot
+# The nightly now runs the in-process per-indicator backtest (~5-10 min); the default
+# start timeout (~90 s) would kill it mid-run (MC 3874).
+TimeoutStartSec=1800
 WorkingDirectory=/home/svarkor/Rocket
 ExecStart=/usr/bin/python3 /home/svarkor/Rocket/source/scripts/generate_demo_page.py
 # The generator commits index.html and pushes to bryn1 main itself.
