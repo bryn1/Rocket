@@ -64,3 +64,4 @@ teddy_prompt.txt
 # Hermes tmp (fixed pattern: the stray files were named .hermes-tmp.*, removed from the served root)
 .heroku-tmp*
 .hermes-tmp*
+source/data/
