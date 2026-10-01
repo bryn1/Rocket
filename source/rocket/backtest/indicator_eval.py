@@ -185,8 +185,8 @@ def run_indicator_eval(frames: dict[str, pd.DataFrame],
     for label, df in frames.items():
         frame = to_indicator_frame(df)
         prepared[label] = (frame, frame["Open"].to_numpy(float), frame["Close"].to_numpy(float))
-    bars_evaluated = int(sum(max(0, len(f) - WARMUP_BARS) for f in prepared.values())
-                         / len(prepared) + 0.5)
+    bars_evaluated = int(sum(max(0, len(f[0]) - WARMUP_BARS) for f in prepared.values())
+                         / len(prepared) + 0.5)  # f is the (frame, opens, closes) tuple; §3 measures len(df)
     doc_indicators: dict[str, dict] = {}
     total_incomplete = {"long": 0, "short": 0}
     for ind in sorted(inds, key=lambda i: type(i).__name__):

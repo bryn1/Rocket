@@ -10,7 +10,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from rocket.backtest.indicator_eval import main, run_indicator_eval, to_indicator_frame
+from rocket.backtest.indicator_eval import (_evidence, main, run_indicator_eval,
+                                            to_indicator_frame)
 from rocket.technical.base import BaseIndicator
 from rocket.technical.models import IndicatorResult, Signal, SignalCategory
 from rocket.technical.momentum import RSI
@@ -180,6 +181,29 @@ def test_calc_errors_counted_and_run_continues():
     with pytest.raises(RuntimeError):
         run_indicator_eval(frames, {"usa": ["AAA", "BBB"]},
                            indicators=[ScriptIndicator(raises=True)])
+
+
+def test_bars_evaluated_is_mean_frame_length_minus_warmup():
+    # F1 (TEST-verdict MC 3874): §3 defines bars_evaluated as the mean of
+    # max(0, len(df) - 60) across tickers. The bug: prepared.values() yields
+    # (frame, opens, closes) TUPLES, so len() measured 3 -> 0 every run.
+    single = run_indicator_eval({"AAA": make_frame(n=100)}, {"usa": ["AAA"]},
+                                indicators=[ScriptIndicator()])
+    assert single["indicators"]["ScriptIndicator"]["bars_evaluated"] == 40
+    two = run_indicator_eval({"AAA": make_frame(n=100), "BBB": make_frame(n=130)},
+                             {"usa": ["AAA", "BBB"]},
+                             indicators=[ScriptIndicator()])
+    assert two["indicators"]["ScriptIndicator"]["bars_evaluated"] == 55  # (40+70)/2
+
+
+def test_evidence_error_threshold_scales_with_bars_evaluated():
+    # F1 side effect: with bars_evaluated == 0 the §3 threshold
+    # calc_errors > 0.5 * bars_evaluated * tickers collapsed to "> 0", so ONE
+    # errored bar marked an indicator "error". On the correct 100-bar value
+    # (40, one ticker) the threshold is 0.5*40*1 = 20: 1 errored bar stays
+    # "insufficient" (n == 0 nets), 21 errored bars flip it to "error".
+    assert _evidence([], calc_errors=1, bars_evaluated=40, tickers=1)[0] == "insufficient"
+    assert _evidence([], calc_errors=21, bars_evaluated=40, tickers=1)[0] == "error"
 
 
 def test_cli_writes_schema_json(tmp_path):
