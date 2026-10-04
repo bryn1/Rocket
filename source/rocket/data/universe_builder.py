@@ -379,7 +379,7 @@ def _extract_tickers_from_wikipedia(page_name: str) -> list[str]:
 
     url = f"https://en.wikipedia.org/wiki/{page_name}"
     headers = {
-        "User-Agent": "Mozilla/5.0 (Rocket Stock Scanner bot; +https://github.com/svarkor-ai/rocket)"
+        "User-Agent": "Mozilla/5.0 (Rocket Stock Scanner bot; +https://github.com/bryn1/rocket)"
     }
 
     try:

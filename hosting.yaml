@@ -1,6 +1,6 @@
 {
   "_comment": [
-    "vm106 hosting config for svarkor-ai/rocket. Strict JSON (no yaml lib; comments only here).",
+    "vm106 hosting config for bryn1/rocket. Strict JSON (no yaml lib; comments only here).",
     "type static -> nginx serves <root>/ directly at /rocket/ ; index.html is the entry.",
     "The product is the read-only demo, regenerated nightly by the rocket-demo-publish pipeline;",
     "the owner dropped the live/25k-scale rebuild.",

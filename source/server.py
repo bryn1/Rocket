@@ -1,4 +1,4 @@
-"""vm106 hosting entrypoint for svarkor-ai/rocket (MC#2317).
+"""vm106 hosting entrypoint for bryn1/rocket (MC#2317).
 
 The vm106 renderer runs `python server.py` with NO PORT env and nginx proxies
 sibbamala.com/rocket/ -> 127.0.0.1:8118. app.py's __main__ block binds 8050, so this

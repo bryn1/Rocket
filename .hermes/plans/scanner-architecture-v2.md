@@ -381,4 +381,4 @@ After the new architecture is built, run calibration:
 - **Artemis**: adversarial gate after each Teddy dispatch. Read the files, verify correctness.
 - **Svarkor (me)**: integration — wire modules together, run the full scan, verify end-to-end.
 - **Model**: All crew use the shared 35B pool. Keep concurrent dispatches ≤ 3.
-- **Version control**: Every change committed with message. Push to `svarkor-ai/rocket`.
+- **Version control**: Every change committed with message. Push to `bryn1/rocket`.
