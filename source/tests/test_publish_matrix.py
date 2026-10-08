@@ -85,6 +85,19 @@ def _rival_push(env, text="RIVAL PAGE\n"):
     _git(rival, "push", "origin", "HEAD:main")
 
 
+def _rival_repo_commit(env):
+    """T13 F1 (MC 10264): the routine history event — bryn1/main advances with
+    a NON-root commit (docs/code/registry refresh)."""
+    env.rival_n += 1
+    rival = env.tmp / f"rival{env.rival_n}"
+    _git(env.tmp, *IDENT, "clone", str(env.remote), str(rival))
+    (rival / "docs").mkdir()
+    (rival / "docs" / "advance.md").write_text("routine advance\n",
+                                               encoding="utf-8")
+    _commit_all(rival, "routine repo commit (non-root)")
+    _git(rival, "push", "origin", "HEAD:main")
+
+
 def _after_git(monkeypatch, hook):
     """Let demo_publish's git calls run for REAL, then call hook(argv, res)
     — the seam that moves the remote between the publish steps."""
@@ -212,12 +225,18 @@ def test_d_transport_death_twice_publish_unproven_network(env, monkeypatch,
 # ── (e) push-race loser: night N regenerable commits discarded; foreign red ─
 
 def test_e_race_loser_regenerable_commit_discarded_then_green(env, capsys):
+    """(e) STRENGTHENED (T13 F1, MC 10264): the race-loser state beside a
+    routine NON-root remote advance — the shipping case. The discard test must
+    survive `bryn1/main` having moved with files HEAD lacks: the touched-set
+    is merge-base..HEAD, never tip-to-tip (DA T9 F1: tip-to-tip read the
+    REMOTE's own files as foreign -> exit 1 every night, forever)."""
     (env.work / "index.html").write_text("night N page (push died)\n",
                                          encoding="utf-8")
     (env.work / "indicator_stats.json").write_text('{"night": "N"}',
                                                    encoding="utf-8")
     _commit_all(env.work, "publish: regenerate demo page + stats (night N)")
     lost = _git(env.work, "rev-parse", "HEAD").stdout.strip()
+    _rival_repo_commit(env)                        # remote ALSO moved (non-root)
     sha = _publish(env)                            # night N+1
     captured = capsys.readouterr()
     assert f"DISCARDED-LOCAL {lost}" in captured.err
@@ -225,6 +244,30 @@ def test_e_race_loser_regenerable_commit_discarded_then_green(env, capsys):
     assert _git(env.tmp, "--git-dir", str(env.remote), "rev-parse",
                 "main").stdout.strip() == sha      # remote == our proven sha
     assert 'id="panel-usa"' in _remote_show(env, "index.html")
+    # hands-off: the remote's own non-root file survives untouched
+    assert _remote_show(env, "docs/advance.md") == "routine advance\n"
+
+
+def test_e2_race_loser_plus_remote_advance_foreign_still_named(env, capsys):
+    """(e2) T13 F1 pair: local-ahead commit touches a FOREIGN path WHILE the
+    remote also advanced (non-root) -> still exit 1 naming the LOCAL foreign
+    path, and never the remote's own newer file (merge-base..HEAD only)."""
+    (env.work / "index.html").write_text("night N page (push died)\n",
+                                         encoding="utf-8")
+    (env.work / "source").mkdir()
+    (env.work / "source" / "notes.md").write_text("hand edit\n",
+                                                  encoding="utf-8")
+    _commit_all(env.work, "human edit ahead of bryn1/main")
+    _rival_repo_commit(env)                        # remote advanced, non-root
+    with pytest.raises(SystemExit) as e:
+        _publish(env)
+    assert e.value.code == 1
+    err = capsys.readouterr().err
+    assert "source/notes.md" in err                # the LOCAL foreign path named
+    assert "docs/advance.md" not in err            # the REMOTE's file is not foreign
+    assert _remote_log(env) == ["routine repo commit (non-root)", "baseline"]
+    assert (env.work / "index.html").read_text(encoding="utf-8") == \
+        "night N page (push died)\n"               # nothing written: hands off
 
 
 def test_e_local_commit_with_foreign_path_refuses_naming_it(env, capsys):

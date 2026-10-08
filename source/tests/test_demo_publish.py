@@ -79,9 +79,13 @@ def test_publish_sync_before_write_no_stash(tmp_path, monkeypatch, capsys):
 
 
 def test_publish_2b_discards_regenerable_only(tmp_path, monkeypatch, capsys):
+    # T13 F1: the touched-set command is pinned as merge-base..HEAD — the
+    # retired tip-to-tip form (bryn1/main HEAD) read the REMOTE's own newer
+    # files as foreign; this matcher only fires on the merge-base sha.
     script = ((lambda a: a[:2] == ["git", "log"],
                {"out": "deadbeef\tpublish: regenerate demo page (MC 10220)\n"}),
-              (lambda a: a[:4] == ["git", "diff", "--name-only", "bryn1/main"],
+              (lambda a: a[:2] == ["git", "merge-base"], {"out": "cafe0001\n"}),
+              (lambda a: a[:4] == ["git", "diff", "--name-only", "cafe0001"],
                {"out": "index.html\nindicator_stats.json\n"}),
               *_base_script())
     argvs = _fake_git(monkeypatch, script)
@@ -96,8 +100,10 @@ def test_publish_2b_discards_regenerable_only(tmp_path, monkeypatch, capsys):
 
 
 def test_publish_2b_foreign_path_exits_naming_it(tmp_path, monkeypatch, capsys):
+    # T13 F1: foreign detection reads merge-base..HEAD (see discard-test pin).
     script = ((lambda a: a[:2] == ["git", "log"], {"out": "cafe1\tmine\n"}),
-              (lambda a: a[:4] == ["git", "diff", "--name-only", "bryn1/main"],
+              (lambda a: a[:2] == ["git", "merge-base"], {"out": "cafe0001\n"}),
+              (lambda a: a[:4] == ["git", "diff", "--name-only", "cafe0001"],
                {"out": "index.html\nsource/app.py\n"}))
     argvs = _fake_git(monkeypatch, script)
     with pytest.raises(SystemExit) as e:

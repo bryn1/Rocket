@@ -42,12 +42,15 @@ def _abort_rebase_residue(repo_root: Path) -> None:
 
 
 def _discard_race_loser_commits(repo_root: Path) -> None:
-    """§6a step 2b (DA-c3 C3-F2): a lost push race leaves a local commit whose
-    next rebase conflicts FOREVER (both sides rewrote index.html from the same
-    parent). After the fetch, commits in bryn1/main..HEAD touching ONLY the
-    two regenerable roots -> reset --hard bryn1/main (they regenerate nightly,
-    step 2's own premise) + DISCARDED-LOCAL per commit; ANY foreign path ->
-    exit 1 naming it, hands off."""
+    """§6a step 2b (DA-c3 C3-F2, T13 F1): a lost push race leaves a local
+    commit whose next rebase conflicts FOREVER (both sides rewrote index.html
+    from the same parent). After the fetch, commits in bryn1/main..HEAD whose
+    diff against the MERGE-BASE touches ONLY the two regenerable roots ->
+    reset --hard bryn1/main (they regenerate nightly, step 2's own premise) +
+    DISCARDED-LOCAL per commit; ANY foreign path -> exit 1 naming it, hands
+    off. The touched set is merge-base..HEAD, NEVER tip-to-tip: a tip-to-tip
+    diff enumerates the REMOTE's own newer files as differences (HEAD lacks
+    them) and bricks every following night (DA T9 F1)."""
     subprocess.run(["git", "fetch", "bryn1", "main"], cwd=repo_root,
                    check=True)
     log = subprocess.run(
@@ -55,8 +58,11 @@ def _discard_race_loser_commits(repo_root: Path) -> None:
         cwd=repo_root, capture_output=True, text=True, check=True).stdout
     if not log.strip():
         return
+    base = subprocess.run(
+        ["git", "merge-base", "bryn1/main", "HEAD"],
+        cwd=repo_root, capture_output=True, text=True, check=True).stdout.strip()
     touched = subprocess.run(
-        ["git", "diff", "--name-only", "bryn1/main", "HEAD"],
+        ["git", "diff", "--name-only", base, "HEAD"],
         cwd=repo_root, capture_output=True, text=True, check=True).stdout.split()
     foreign = [p for p in touched if p not in REGENERABLE_ROOTS]
     if foreign:
