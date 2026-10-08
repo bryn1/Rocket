@@ -3,9 +3,11 @@ Description=Rocket demo page nightly publish (fetch, score, render, push)
 
 [Service]
 Type=oneshot
-# The nightly now runs the in-process per-indicator backtest (~5-10 min); the default
-# start timeout (~90 s) would kill it mid-run (MC 3874).
-TimeoutStartSec=1800
+# Full-universe nightly, re-derived MC 10220 (DESIGN §6): Saturday worst ≈ 97 min
+# (fetch 17×3 Yahoo-slow + scoring + weekly sample backtest + render/publish),
+# weekday ≈ 72 → 10800 s = 1.86× worst headroom. The old 1800 (35-ticker era,
+# MC 3874) would kill the full pass mid-fetch.
+TimeoutStartSec=10800
 WorkingDirectory=/home/svarkor/Rocket
 ExecStart=/usr/bin/python3 /home/svarkor/Rocket/source/scripts/generate_demo_page.py
 # The generator commits index.html and pushes to bryn1 main itself.

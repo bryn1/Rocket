@@ -61,16 +61,21 @@ systemctl --user enable --now rocket-demo-publish.timer
 rocket-demo-publish.timer   (user unit, OnCalendar 05:00 UTC, Persistent=true →
       │                      runs catch up after downtime)
       ▼
-rocket-demo-publish.service (Type=oneshot, TimeoutStartSec=1800 — the in-process
-      │                      backtest takes ~5-10 min, default ~90 s would kill it)
+rocket-demo-publish.service (Type=oneshot, TimeoutStartSec=10800 — full-universe nightly,
+      │                      re-derived MC 10220; the 35-era 1800 would kill the full pass)
       ▼
 source/scripts/generate_demo_page.py
-      ├─ fetches OHLCV for the 35-ticker universe (usa/sweden/germany)
-      ├─ scores all 34 registered indicators per ticker
-      ├─ runs the per-indicator backtest IN-PROCESS (rocket.backtest.indicator_eval)
-      └─ fail-closed guard: renders to string first; unless the page passes the
-         checks (enough scored rows + all tabs + freshness markers) it exits 1
-         WITHOUT writing or committing — the last good page stays live everywhere
+      ├─ loads the tracked registry (full_universe; floors fire BEFORE any network)
+      │  — the FULL universe (~12.8k unique tickers / 15 regions) — then batched
+      │  delta/backfill OHLCV fetch through the store (store_io + bulk_fetcher)
+      ├─ scores all 34 registered indicators per ticker (score_all, Pool(8))
+      ├─ redraws the Indikatorer stats WEEKLY (Saturday): deterministic 500-ticker
+      │  stratified sample via sample_backtest (Pool(12)); other days the committed
+      │  indicator_stats.json is carried with an explicit cadence note (not a failure)
+      └─ fail-closed guard: renders to string first; unless the page passes ALL checks
+         (registry floors + scored floor max(2500, 0.40×registry) + per-region coverage
+         + closed partition + markers for every tab + page ceiling + settled bars) it
+         exits 1 WITHOUT writing or committing — the last good page stays live everywhere
       ▼
 commits index.html + indicator_stats.json (exactly these two paths, nothing else)
       ▼
@@ -79,10 +84,12 @@ pushes to bryn1 main (the generator does the git plumbing itself)
 
 ### Carry-forward rule
 
-If the backtest fails (any exception, or an unknown schema version in the artifact), the
-generator keeps the **last committed** `indicator_stats.json` unchanged and embeds that in
-the page; the footer shows the embedded `generated_at`, so stale evidence is visible, not
-hidden. A scoring failure never blocks the backtest and vice versa.
+If the weekly backtest fails on a Saturday (any exception, or an unknown schema version in the
+artifact), the generator keeps the **last committed** `indicator_stats.json` unchanged and embeds
+that in the page; the footer shows the embedded `generated_at`, so stale evidence is visible, not
+hidden. Monday–Friday the carry is SCHEDULED, not a failure — the page then says the stats update
+weekly instead of claiming a failed run. A scoring failure never blocks the backtest and vice
+versa.
 
 ### Logs & status
 

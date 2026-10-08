@@ -23,32 +23,60 @@ result is an **Overall score (0–100)** plus a **BUY / HOLD / SELL** signal per
 per-category sub-scores for Momentum, Trend, Volatility and Volume. The full list lives in
 `source/rocket/scoring/rocket_score.py` (`INDICATORS`).
 
-## The hosted page is a read-only demo snapshot
+## The hosted page is a daily snapshot of the full universe
 
-The page at **https://sibbamala.com/rocket/** is a **static, read-only snapshot** — it is
-not a live scan and does not cover a global universe. Concretely, the snapshot contains:
+The nightly pipeline in this tree fetches, scores and publishes to
+**https://sibbamala.com/rocket/** a **static, read-only snapshot** — not a live scan —
+covering the **whole tracked universe**: every ticker in the registry
+`source/rocket/data/universe_cache.json` — **12,793 unique tickers across 15 regions**
+(usa 6,652, india 1,798, hongkong 1,122, japan 997, sweden 742, uk 356, norway 293, finland
+194, australia 151, denmark 145, canada 144, korea 100, switzerland 35, germany 32, france 32;
+registry timestamped 2026-09-13) — fetched and scored fresh on every nightly run. Concretely:
 
-- **35 tickers** (a fixed curated watchlist of large caps: AAPL, MSFT, SAP.DE, SAAB-B.ST, …)
-- **3 regions**: Germany, Sweden, USA
-- **~1 year of daily OHLCV** per ticker, fetched fresh on each run
-- **Regenerated nightly** by the systemd user timer `rocket-demo-publish.timer` (05:00 UTC) —
-  the page carries a freshness line stating when its data was fetched ("data hämtad …"), so
-  how current the snapshot is is always visible on the page
+- **Every scored ticker** appears in its region tab; the **Alla** panel shows the **Top-500 by
+  score**, and the filter box searches **every** panel, so any **scored** ticker is findable
+  (rows exist only for scored tickers — the guard floor below guarantees ≥5,117 of them;
+  a hit reveals the row and names its region)
+- **~1 year of daily OHLCV** per ticker, delta-appended nightly into a local CSV store; only
+  *settled* bars are stored (an in-progress session bar is stripped at write time)
+- **Regenerated nightly** by the systemd user timer `rocket-demo-publish.timer` (05:00 UTC). The
+  page carries a freshness line ("data hämtad …") *and* a coverage line
+  ("**scorerade N av M tickers i registret**"), so both currency and coverage are always visible
+- **A revert to a small page is guarded fail-closed**: the registry must stay ≥10,000 unique
+  with ≥8 non-empty regions, committed-clean and within 0.8× of the last published size; the
+  scored-rows floor is `max(2,500, 40 % of the registry)` = 5,117 at today's registry; every
+  region tab must score ≥50 % of its registry members; the page has a 2.5 MB ceiling. A silent
+  shrink is visible on the page as `scorerade 35 av 12793` — and cannot pass the guard.
 
-It is a proof-of-concept of the pipeline end to end (real prices, real scoring math, a clean
-read-only UI), sized as a small sample. The detail tab surfaces a representative signal per
-category rather than all 34 indicators; the Indikatorer tab shows per-indicator backtest
-evidence (signal counts, hit-rate and net % per horizon) recomputed nightly. It deliberately
-makes **no claim** of live data, global coverage, or a full-universe scan.
+It remains honest about what it is: **read-only** (no live queries, no autotrading), a
+**snapshot** regenerated once a day, and each region row carries the signal plus four
+per-category sub-scores (Momentum, Trend, Volatility, Volume) rather than all 34
+indicators. The Indikatorer tab shows per-indicator backtest
+evidence (signal counts, hit-rate and net % per horizon) from a deterministic **500-ticker
+stratified sample**, redrawn **weekly (Saturday)** and carried with an explicit cadence note
+on other days. It makes **no claim** of live data. The full-universe scope is the owner's
+restored product (ruling 2026-10-07, MC 10220): the September universe coverage on today's
+layout, updated daily.
+
+> **Cutover status (2026-10-08 — delete at cutover close-out):** everything above describes the
+> product on this branch, status **TESTED** (same scoper as `docs/ARCHITECTURE.md` "Läsregel");
+> the URL above still serves the pre-cutover 35-ticker page until the first full-scale nightly
+> lands (**MC 10227**, pending).
 
 ## Nightly pipeline
 
 - The systemd user timer `rocket-demo-publish.timer` (unit files in `source/systemd/`) fires at
-  **05:00 UTC** and runs `source/scripts/generate_demo_page.py`: fetch → score → per-indicator
-  backtest → render, fail-closed — nothing is written unless the rendered page passes the guard.
+  **05:00 UTC** and runs `source/scripts/generate_demo_page.py` through the stages in
+  `docs/ARCHITECTURE.md` §2: registry load (pre-network floors) → batched delta/backfill fetch
+  → parallel scoring of every stored ticker → weekly Indikatorer sample backtest (Saturday) or
+  honest carry → render → fail-closed guard → publish. Nothing is written unless the rendered
+  page passes every guard; on failure the last good page stays live.
 - The generator is the only writer of `index.html` and `indicator_stats.json`; it stages and
   commits exactly those two paths, and the push to `main` is what deploys the page.
-- If the backtest step fails, the last committed `indicator_stats.json` is carried forward and
+- The registry itself is **never rebuilt nightly**. The only sanctioned path to a new
+  `universe_cache.json` is the guarded CLI `python3 source/scripts/refresh_universe.py`
+  (bounded shrink/growth, per-region and superset rules — refuse leaves the file untouched).
+- If the weekly backtest fails, the last committed `indicator_stats.json` is carried forward and
   the page shows its `generated_at` — stale evidence stays visible instead of disappearing.
 
 ## How to run the per-indicator backtest
@@ -81,7 +109,9 @@ served — see `hosting.yaml`), so the static hosting alias can never expose eng
   - `source/rocket/scoring/` — the Rocket score (`rocket_score.py`, weighting, risk, confidence)
   - `source/rocket/technical/` — the 34 indicator implementations
   - `source/rocket/dataquality/` — split-adjust, outlier detection, cleaning pipeline, position sizing
-  - `source/rocket/data/`, `source/data_fetcher/` — data fetch and storage
+  - `source/rocket/data/`, `source/data_fetcher/` — data fetch and storage, incl. the tracked
+    registry `universe_cache.json` the nightly loads (never rebuilt nightly; see
+    `source/scripts/refresh_universe.py`)
   - `source/rocket/telegram_bot/`, `source/rocket/backtest/`, `source/rocket/scan_engine/` — bot, backtests, scans
   - `source/rocket/scoring/stocktwits.py` — StockTwits social-sentiment fetcher
   - `source/tests/`, `source/requirements.txt` — tests, pins

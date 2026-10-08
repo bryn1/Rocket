@@ -19,6 +19,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from rocket.data.fetcher import fetch_ohlcv
 from rocket.data.storage import load_ohlcv, save_ohlcv
 from rocket.data.models import TickerInfo, Region
+from rocket.data.universe_regions import REGION_META
 from rocket.technical.momentum import (RSI, MACD, Stochastic, WilliamsR,
                                         ROC, CCI)
 from rocket.technical.trend import (EMA9, EMA21, EMA50, EMA200,
@@ -95,14 +96,48 @@ def _indicator_values_to_dicts(results) -> List[Dict[str, Any]]:
     return out
 
 
-# Map our 4-region names → legacy Region enum values
+# Map registry region names → legacy Region enum values. Bucket choice is
+# cosmetic, not functional (no region branch in apply_filters/weight_scores,
+# DESIGN §2 VERIFIED) — the map exists ONLY so Region() below cannot raise
+# for a registry key. F1 (MC 10223): every REGION_META key resolves; the kept
+# mappings are unchanged and the golden test pins the 35 demo scores exactly.
 _REGION_MAP = {
     "sweden": "smid",
     "usa": "us",
     "china": "asia",
     "india": "asia",
     "germany": "eu",
+    "uk": "eu",
+    "france": "eu",
+    "switzerland": "eu",
+    "norway": "eu",
+    "denmark": "eu",
+    "finland": "eu",
+    "canada": "us",
+    "brazil": "us",
+    "australia": "asia",
+    "japan": "asia",
+    "hongkong": "asia",
+    "korea": "asia",
+    "singapore": "asia",
+    # DESIGN §3 pins the key's bucket as the US enum value ("usa" in the doc,
+    # "us" here — the enum value, not the region name; "usa" would make
+    # Region(...) raise, violating the design's own never-raises test).
+    "international": "us",  # never scored — the loader drops it (DESIGN §4)
 }
+
+
+def _assert_region_map(region_map: dict, region_meta: dict) -> None:
+    """Raise on any REGION_META key the map cannot resolve — LOUD at load.
+    Without this, Region(<KEY>) raises per ticker and the per-ticker
+    `except Exception` turns a whole region into 0 scored rows with a
+    GREEN guard (F1: 3,569 tickers / 11 regions, 27.9 %)."""
+    missing = sorted(set(region_meta) - set(region_map))
+    if missing:
+        raise RuntimeError(f"_REGION_MAP missing REGION_META keys: {missing}")
+
+
+_assert_region_map(_REGION_MAP, REGION_META)
 
 
 def _score_from_summary(summary, ticker: str = "", region: str = "us", sector: str = "") -> Dict:

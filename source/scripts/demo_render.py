@@ -1,21 +1,27 @@
-"""HTML renderers for the daily demo page (MC 3874): pure frame-data -> HTML.
-
-Holds STYLE/JS, the per-region score tables, the new Indikatorer tab (seam
-C3: renders only the pinned indicator_stats.json fields) and the freshness
-banner. No I/O, no time reads: staleness is computed from explicit args so
-render is deterministic for fixed inputs.
+# reason: one subject — page rendering (DESIGN §3); past the 250 soft target,
+# stays under the 400 hard ceiling.
+"""HTML renderers for the daily demo page (MC 3874 → v3 MC 10223): pure
+frame-data -> HTML. Same layout/CSS/structure/copy family (DESIGN §7): tabs
+auto-generate from UniversePlan.order with REGION_META labels, Alla = Top-500
+by score, the filter searches every panel (F3), and the Indikatorer tab
+renders only the pinned indicator_stats.json fields (seam C3). No I/O, no
+time/random reads: staleness and counts come from explicit args, so render is
+deterministic for fixed inputs.
 """
 from __future__ import annotations
 
 import math
+import sys
 from datetime import datetime, timedelta
 
-from demo_universe import REGION_LABELS
+from full_universe import ALLA_CAP, region_label
 
-# Guard markers (generate_demo_page._guard asserts these exist).
+# Guard markers (generate_demo_page._guard asserts these on the bytes).
 BANNER_MARKER = 'id="freshness"'
+TAB_ALL_MARKER = 'id="tab-all"'
 INDICATOR_TAB_MARKER = 'id="tab-indicators"'
 PANEL_PREFIX = 'id="panel-'
+PANEL_ALL_MARKER = 'id="panel-all"'
 
 EMPTY_BACKTEST_TEXT = "Backtest saknas — publiceras när närmaste löpning lyckats"
 
@@ -50,6 +56,11 @@ input[type=text]{background:#1a1a2e;border:1px solid #2a2a3e;color:#e0e0e0;paddi
 .calc-err{color:#ef5350;font-size:12px}
 </style>"""
 
+# F3 fix (MC 3874 live bug, demo_render.py:62-67): the filter searched only
+# the panel it was wired to, so with Alla capped at 500 most tickers were
+# "invisible". ONE function, one status span, same input box: it searches
+# every panel's ticker cells, reveals the hit and activates its region tab,
+# surfacing "<TICKER> — <Region>" (or 'hittades inte').
 JS = """<script>
 function showRegion(id, btn){
   document.querySelectorAll('.region-panel').forEach(p=>p.style.display='none');
@@ -59,11 +70,26 @@ function showRegion(id, btn){
   btn.classList.add('active');
   btn.setAttribute('aria-selected','true');
 }
-function filterTable(input, panelId){
-  const q = input.value.toUpperCase();
-  document.querySelectorAll('#'+panelId+' tbody tr').forEach(tr=>{
-    tr.style.display = tr.cells[0].textContent.toUpperCase().includes(q) ? '' : 'none';
+function filterTable(input){
+  const q=input.value.trim().toUpperCase();
+  const status=document.getElementById('filter-status');
+  let first=null,hits=0;
+  document.querySelectorAll('.region-panel').forEach(p=>{
+    if(p.id==='panel-indicators')return;
+    p.querySelectorAll('tbody tr').forEach(tr=>{
+      const hit=!q||tr.cells[0].textContent.toUpperCase().includes(q);
+      tr.style.display=hit?'':'none';
+      if(hit&&q){hits++;if(p.id!=='panel-all'&&!first)
+        first=[tr.cells[0].textContent,p.dataset.label||p.id.slice(6),p.id];}
+    });
   });
+  if(!status)return;
+  if(!q){status.textContent='';return;}
+  if(!hits){status.textContent='hittades inte';return;}
+  if(!first){status.textContent=q+' (endast i Alla)';return;}
+  status.textContent=first[0]+' — '+first[1];
+  const tab=document.getElementById('tab-'+first[2].slice(6));
+  if(tab)tab.click();
 }
 </script>"""
 
@@ -99,7 +125,11 @@ def is_stale(run_iso: str, data_last_bar: str) -> bool:
     weekends, so stale means the newest bar predates the latest weekday
     (Mon-Fri) strictly before the fetch date — i.e. data is at least two
     trading days behind. The 05:00-UTC nightly seeing the previous calendar
-    day's bars is FRESH; a weekend never counts as a missing trading day."""
+    day's bars is FRESH; a weekend never counts as a missing trading day.
+    THE rule (DESIGN §8/DA-c3 C3-F3b): the settled-bar gate reuses this one —
+    no second freshness formula may exist. NOTE (C3-F3a): it has NO holiday
+    calendar, so global-holiday nights can false-red on it alone; the gate's
+    monotonic prev-green alternative covers that — never claim otherwise."""
     if not data_last_bar:
         return False                      # unknown bar: banner stays 'okänd'
     try:
@@ -113,12 +143,34 @@ def is_stale(run_iso: str, data_last_bar: str) -> bool:
     return bar < expected
 
 
-def _table(rows: list[dict], panel_id: str) -> str:
-    parts = [f'<div class="region-panel" id="panel-{panel_id}" role="tabpanel">',
-             '<div class="table-wrap"><table><thead><tr>',
-             '<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>',
-             '<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>',
-             '</tr></thead><tbody>']
+def settled_gate_ok(data_last_bar: str, run_iso: str,
+                    prev_green: str | None) -> bool:
+    """§9 #6 settled-bar gate, C3-F3a correction: PASS when stored data has
+    not regressed since the last green publish (monotonic freshness — covers
+    holiday nights where the weekday rule, which has NO holiday calendar,
+    false-reds), OR the weekday rule passes. Copy never claims holidays pass
+    from the weekday rule alone. Moved out of the generator (MC 10264): the
+    freshness rules keep ONE home — this gate composes is_stale above."""
+    if prev_green and data_last_bar and data_last_bar >= prev_green:
+        return True
+    if not prev_green:
+        print("settled-bar gate: ingen publicerad run_manifest — prövar "
+              "veckodagsregeln ensam (saknar helgedagskalender)",
+              file=sys.stderr)
+    return not is_stale(run_iso, data_last_bar)
+
+
+def _table(rows: list[dict], panel_id: str, label: str | None = None,
+           note: str | None = None) -> str:
+    data_attr = f' data-label="{label}"' if label else ""
+    parts = [f'<div class="region-panel" id="panel-{panel_id}"{data_attr} '
+             'role="tabpanel">']
+    if note:
+        parts.append(f'<div class="region-note">{note}</div>')
+    parts.append('<div class="table-wrap"><table><thead><tr>'
+                 '<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>'
+                 '<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>'
+                 '</tr></thead><tbody>')
     for r in rows:
         parts.append(
             f'<tr><td>{r["ticker"]}</td>'
@@ -153,7 +205,10 @@ def _indicator_row(key: str, ind: dict, h: int) -> str:
 
 
 def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
-    """Seam C3: renders ONLY pinned artifact fields; no doc -> honest text."""
+    """Seam C3: renders ONLY pinned artifact fields; no doc -> honest text.
+    The sample-size line reads engine.tickers of the document ACTUALLY
+    rendered (F5): a carried 35-ticker artifact honestly says 35 under a
+    12.8k header."""
     parts = ['<div class="region-panel" id="panel-indicators" role="tabpanel" '
              'style="display:none">',
              '<h2>Indikatorer — backtest</h2>']
@@ -162,6 +217,11 @@ def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
     if not doc or not doc.get("indicators"):
         parts.append(f'<div class="ind-note">{EMPTY_BACKTEST_TEXT}</div></div>')
         return "\n".join(parts)
+    eng = doc.get("engine") or {}
+    if eng.get("tickers"):
+        parts.append(
+            f'<div class="region-note">Statistik på {eng["tickers"]} tickers '
+            f'(veckovis urval, senast {doc.get("generated_at", "?")})</div>')
     h = doc.get("primary_horizon_days", 10)
     order = sorted(doc["indicators"].items(),
                    key=lambda kv: (_EV_RANK.get(
@@ -178,14 +238,18 @@ def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
     return "\n".join(parts)
 
 
-def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
-           indicators: dict | None = None, indicators_note: str | None = None) -> str:
-    """Full page. run_ts display string + data_last_bar drive the banner."""
+def render(plan, results: dict[str, list[dict]], run_ts: str,
+           data_last_bar: str, indicators: dict | None = None,
+           indicators_note: str | None = None) -> str:
+    """Full page. plan = UniversePlan (order/labels/m_unique/registry_ts);
+    results = {region: [row dicts]} scored tonight; run_ts display string +
+    data_last_bar drive the banner."""
     all_rows = sorted((r for rows in results.values() for r in rows),
                       key=lambda r: r["overall"], reverse=True)
     top10 = all_rows[:10]
     n = len(all_rows)
-    regions = list(results.keys())
+    alla_rows = all_rows[:ALLA_CAP]
+    regions = list(plan.order)
     stale = is_stale(run_ts, data_last_bar)
     last_bar_txt = data_last_bar if data_last_bar else "okänd"
     banner_cls = "sub stale" if stale else "sub"
@@ -193,20 +257,22 @@ def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
     tabs = ['<div class="tabs" role="tablist">']
     tabs.append('<button class="tab-btn active" id="tab-all" role="tab" '
                 'aria-selected="true" onclick="showRegion(\'all\',this)">'
-                f'Alla ({n})</button>')
+                f'Alla ({len(alla_rows)})</button>')
     for reg in regions:
         tabs.append('<button class="tab-btn" id="tab-' + reg + '" role="tab" '
                     'aria-selected="false" '
                     f'onclick="showRegion(\'{reg}\',this)">'
-                    f'{REGION_LABELS.get(reg, reg)} ({len(results[reg])})</button>')
+                    f'{region_label(reg)} ({len(results.get(reg, []))})</button>')
     tabs.append('<button class="tab-btn" id="tab-indicators" role="tab" '
                 'aria-selected="false" onclick="showRegion(\'indicators\',this)">'
                 'Indikatorer</button>')
     tabs.append('</div>')
 
-    panels = [_table(all_rows, "all")]
+    panels = [_table(alla_rows, "all",
+                     note=f"Alla · topp {ALLA_CAP} av {n}")]
     for reg in regions:
-        panels.append(_table(results[reg], reg))
+        panels.append(_table(results.get(reg, []), reg,
+                             label=region_label(reg)))
     panels.append(render_indikatorer_panel(indicators, indicators_note))
 
     top_rows = "".join(
@@ -215,15 +281,21 @@ def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
         f'<td class="{_score_class(r["overall"])}">{r["overall"]:.1f}</td></tr>'
         for r in top10)
 
+    # Universe section (R4): per-region registry counts + the filter pointer
+    # — never every ticker literally again (389 B today, ~115 KB at 12.8k).
     universe_lines = "".join(
-        f'<div class="region-note"><b>{REGION_LABELS.get(reg, reg)}</b> ({len(rows)}): '
-        f'{", ".join(r["ticker"] for r in rows)}</div>'
-        for reg, rows in results.items())
+        f'<div class="region-note"><b>{region_label(reg)}</b> '
+        f'({len(plan.regions.get(reg, []))})</div>'
+        for reg in regions)
+    universe_lines += ('<div class="region-note">Hitta en ticker: filtret '
+                       'ovan söker i alla regioner.</div>')
 
     stats_stamp = ""
     if indicators and indicators_note and indicators.get("generated_at"):
         stats_stamp = (f' · Indikatorstatistik från '
                        f'{indicators["generated_at"]} (bärs vidare)')
+    dropped_note = (f' · {len(plan.dropped)} tickers utan primärregion'
+                    if getattr(plan, "dropped", None) else "")
 
     return f"""<!DOCTYPE html>
 <html lang="sv"><head><meta charset="utf-8">
@@ -232,9 +304,9 @@ def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
 <body><div class="wrap">
 <header class="page"><h1>Rocket — Stock Scanner Demo</h1>
 <div class="{banner_cls}" id="freshness" role="status">Data hämtad {run_ts} · Senaste kursdatum: {last_bar_txt}</div>
-<div class="sub">Läs-only demo · {n} tickers i {len(regions)} regioner · scorerade med Rocket-score</div></header>
+<div class="sub">Läs-only demo · scorerade {n} av {plan.m_unique} tickers i registret · {len(regions)} regioner · scorerade med Rocket-score</div></header>
 <h2>Rankings</h2>
-<div style="margin-bottom:10px"><input type="text" placeholder="Filtrera ticker…" aria-label="Filtrera ticker" oninput="filterTable(this,'panel-all')"></div>
+<div style="margin-bottom:10px"><input type="text" placeholder="Filtrera ticker…" aria-label="Filtrera ticker" oninput="filterTable(this)"> <span id="filter-status" class="region-note" role="status" style="display:inline;margin-left:8px"></span></div>
 {''.join(tabs)}
 {''.join(panels)}
 <h2>Top 10 — köpsvy</h2>
@@ -242,5 +314,5 @@ def render(results: dict[str, list[dict]], run_ts: str, data_last_bar: str,
 <tbody>{top_rows}</tbody></table></div>
 <h2>Universe</h2>
 {universe_lines}
-<div class="footer">Genererad {run_ts} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
+<div class="footer">Genererad {run_ts} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · Registry {plan.registry_ts}{dropped_note} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
 </div>{JS}</body></html>"""
