@@ -8,9 +8,11 @@ ONLY sanctioned path to a new ``universe_cache.json``:
 
     force build -> bounded guard -> atomic write; --commit is BEHIND the guard.
 
-Guard (one governing family, C2-F3/F4; bound derived from the SAME constants
-as the page ceiling so no blessed refresh can outgrow §9 #5):
-    0.8 * current  <=  m_unique_new  <=  min(1.5 * current, M_PAGE_MAX)
+Guard (one governing family, C2-F3/F4 + F5 MC 10264; bound derived from the
+SAME constants as the page ceiling so no blessed refresh can outgrow §9 #5,
+and NO blessed shrink can ever walk under S0's REGISTRY_MIN):
+    max(0.8 * current, min(current, REGISTRY_MIN))
+        <=  m_unique_new  <=  min(1.5 * current, M_PAGE_MAX)
     named regions (usa, sweden, india, japan, hongkong): new >= 0.8 * current
     superset: new non-empty region set  ⊇  committed non-empty set (thin
               named-free regions cannot silently vanish; growth allowed)
@@ -60,10 +62,21 @@ def guard_refresh(committed: dict, new_buckets: dict[str, list[str]]
     new_view = fu.assign_primary_regions(new_buckets)
     cur_m, new_m = fu.m_unique_of(cur_view), fu.m_unique_of(new_view)
 
-    lo, hi = SHRINK_FLOOR * cur_m, min(GROWTH_CEILING * cur_m, fu.M_PAGE_MAX)
+    # F5 (MC 10264): the lower bound is RELATIVE (0.8 x current) AND absolute.
+    # Two consecutive blessed shrinks each inside 0.8x walk the registry under
+    # S0's absolute REGISTRY_MIN — blessed-then-red on the floor side. Bound:
+    # lo = max(SHRINK_FLOOR x current, min(current, REGISTRY_MIN)) — at/above
+    # the floor the absolute REGISTRY_MIN bites (no blessed refresh can sink
+    # under the nightly); below it (bootstrap states only) the floor-protected
+    # side is `current` itself: a sub-floor registry may never shrink further.
+    floor_protected = min(cur_m, fu.REGISTRY_MIN)
+    lo = max(SHRINK_FLOOR * cur_m, floor_protected)
+    hi = min(GROWTH_CEILING * cur_m, fu.M_PAGE_MAX)
     if new_m < lo:
         reasons.append(f"m_unique {new_m} < shrink floor {lo:g} "
-                       f"(0.8 x current {cur_m})")
+                       f"(max({SHRINK_FLOOR:g} x current {cur_m}, "
+                       f"floor-protected {floor_protected} vs REGISTRY_MIN "
+                       f"{fu.REGISTRY_MIN}))")
     if new_m > hi:
         reasons.append(f"m_unique {new_m} > upper bound {hi:g} "
                        f"= min({GROWTH_CEILING} x {cur_m}, M_PAGE_MAX "

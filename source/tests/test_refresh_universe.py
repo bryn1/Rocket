@@ -208,3 +208,44 @@ def test_default_builder_blessed_refresh_writes_through_the_cli_only(
     assert doc["tickers"]["brazil"] == ["NEW-br-1", "NEW-br-2"]
     assert not list(tmp_path.glob("*.tmp"))          # atomic rename, no residue
     assert ic.read_text(encoding="utf-8") == '{"keep": "me"}'
+
+
+# ── F5 (MC 10264 / DA T9 F5): blessed shrinks must not walk under REGISTRY_MIN
+# Two consecutive blessed shrinks (12,793 -> 10,235 -> 8,188) passed the purely
+# RELATIVE 0.8 x current bound, yet left the committed registry < the nightly
+# S0 floor REGISTRY_MIN -> every following nightly aborts. The guard's lower
+# bound is therefore max(0.8 x current, floor-protected), floor-protected =
+# min(current, REGISTRY_MIN): at/above the floor the absolute bound bites;
+# below it (bootstrap worlds) nothing may shrink AT ALL (ratchet only up).
+
+_BIG_SIZES = {"usa": 2000, "sweden": 1800, "germany": 1600, "india": 1500,
+              "hongkong": 1400, "japan": 1000, "norway": 800, "china": 0}
+
+
+def _big(scale=1.0):
+    return {r: [f"BIG-{r}-{i}" for i in range(int(n * scale))]
+            for r, n in _BIG_SIZES.items()}
+
+
+def _big_committed():
+    # m_unique == 10100: >= REGISTRY_MIN, and 0.8x current == 8080 < 10000 —
+    # the exact state where the relative-only bound let a blessed walk sink.
+    return {"tickers": _big(), "timestamp": fx.FIXTURE_TS, "version": 2}
+
+
+def test_guard_f5_blessed_shrink_cannot_cross_registry_min():
+    assert sum(len(v) for v in _big().values()) == 10_100   # pin the premise
+    cur = _big_committed()
+    assert ru.guard_refresh(cur, _big(1.0)) == []           # equality green
+    reasons = ru.guard_refresh(cur, _big(0.95))             # 9595: >= 0.8 x
+    assert reasons and any("REGISTRY_MIN" in r for r in reasons)
+    # ... yet < REGISTRY_MIN -> blessed-then-red is refused HERE, naming it.
+
+
+def test_guard_f5_protected_bound_scales_with_the_committed_side():
+    # A committed registry already UNDER the floor (only bootstrap can get
+    # there — blessed paths cannot cross down since F5) may not shrink at
+    # all: the fixture registry (m=222) refuses 0.75x via the same one bound.
+    reasons = ru.guard_refresh(_committed(), _buckets(scale=0.99))
+    assert reasons and any("shrink floor" in r for r in reasons)
+    assert ru.guard_refresh(_committed(), _buckets(scale=1.0)) == []
