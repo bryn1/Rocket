@@ -371,6 +371,10 @@ def test_gpartition_double_booked_plan_breaks_identity_guard(floors_patched):
 def test_gpartition_empty_batch_after_requeue_named_and_dead_class(tmp_path,
                                                                    monkeypatch,
                                                                    capsys):
+    """MC 10309 re-wire: dead_at_fetch means FRAME RETURNED, FILE MISSING
+    (store death) — absence from a non-empty batch is STARVED -> honest
+    NOT_FETCHED (test_fetch_rate_limit.py; the old code marked every member
+    of a non-empty batch completed, which is the F-2 accounting lie)."""
     import rocket.data.bulk_fetcher as bf
     monkeypatch.setattr(bf, "BATCH_DELAY", 0)
     # grouping only (dead-class needs a completed batch WITH a live sibling;
@@ -381,11 +385,19 @@ def test_gpartition_empty_batch_after_requeue_named_and_dead_class(tmp_path,
                                             for i in range(0, len(ts), 2)])
     plan = full_universe_plan(regions={"usa": ["A", "B"], "japan": ["J1"]},
                               order=["usa", "japan"], m_unique=3)
+    real_upsert = store_io.upsert
+
+    def upsert(ticker, region, frame, **kw):
+        if ticker == "B":
+            raise OSError("planted store death — frame returned, file lost")
+        return real_upsert(ticker, region, frame, **kw)
+
+    monkeypatch.setattr(store_io, "upsert", upsert)
 
     def fetcher(batch, period):              # japan batch: {} twice (dead);
         if all(t.startswith("J") for t in batch):
-            return {}                        # B: absent from completed batch
-        return {t: _mk_frame() for t in batch if t != "B"}
+            return {}                        # B: frame returned, store dies
+        return {t: _mk_frame() for t in batch}
 
     facts = gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,
                             cache_dir=tmp_path, fetcher=fetcher)

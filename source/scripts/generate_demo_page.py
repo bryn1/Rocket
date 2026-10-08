@@ -8,10 +8,12 @@
 
 Stages (DESIGN §6): 0 registry loader (full_universe; S0 floors fire BEFORE
 any network) -> 1 fetch (store_io classification + bulk_fetcher._fetch_batch
-through the stride planner, C3-F1) -> 2 score_all Pool(8) + §4 partition
-accounting -> 3 Indikatorer weekly branch (demo_indicators) -> 4 render -> 5
-guards (§9 floor/G6/partition/markers/ceiling + C3-F3a settled gate) -> 6
-publish (demo_publish: §6a sync-before-write, 2b, ls-remote proof).
+through the stride planner, C3-F1; per-member completion + rate-limit
+backoff ladder live in fetch_store.py, MC 10309) -> 2 score_all Pool(8)
++ §4 partition accounting -> 3 Indikatorer weekly branch (demo_indicators)
+-> 4 render -> 5 guards (§9 floor/G6/partition/markers/ceiling + C3-F3a
+settled gate) -> 6 publish (demo_publish: §6a sync-before-write, 2b,
+ls-remote proof).
 
 --dry-run applies ALL floors before writing (F6); --skip-fetch renders from
 the store (exempts §9 #3's not_fetched == 0 only); --force-backtest forces
