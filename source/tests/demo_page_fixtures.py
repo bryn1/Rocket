@@ -129,8 +129,15 @@ def html(doc=None, results=None, bar=FRESH_BAR, note=None):
                               SAMPLE_DOC if doc is None else doc, note)
 
 
+# FROZEN fixture store (MC 10304): the golden-35 pin scores THESE committed
+# bytes (tests/data/golden35, byte-locked by its SHA256SUMS manifest), NEVER
+# the live nightly store at source/data/raw — the nightly rewrites that dir
+# daily and a moving store turns a continuity pin into a daily time-bomb.
+GOLDEN35_DIR = Path(__file__).resolve().parent / "data" / "golden35"
+
 # Golden pin (the ONE allowed absolute pin — it IS the f2c02f6 published
-# page): rendered 1-decimal Overall of the live page rows at f2c02f6.
+# page): rendered 1-decimal Overall of the live page rows at f2c02f6,
+# reproduced ONLY off GOLDEN35_DIR (see test_golden35_fixtures.py).
 GOLDEN_35 = {
     "MSFT": "57.8", "DIS": "45.8", "WMT": "48.8", "NVDA": "52.6",
     "XOM": "58.8", "CSCO": "55.6", "AMZN": "60.7", "MA": "53.6",
