@@ -97,14 +97,16 @@ def run_refresh(cache_path: Path | None = None, *, builder=None,
                 commit: bool = False, now_iso: str | None = None) -> int:
     """Refresh once; returns exit code (0 blessed [+committed], 1 refused).
 
-    ``builder`` is the seam for tests (default: the lazy
-    universe_builder.get_universe(force_refresh=True) — imported only when a
-    build actually happens, never at module import)."""
+    ``builder`` is the seam for tests. Default (MC 10264 F2): a FORCED
+    universe_builder build that writes NOTHING to disk — get_universe
+    (force_refresh=True, write_cache=False), imported only when a build
+    actually happens, never at module import. run_refresh is therefore the
+    SOLE writer of the tracked file: guard first, then ONE atomic write."""
     path = Path(cache_path) if cache_path else fu.REGISTRY_PATH
     committed = json.loads(path.read_text(encoding="utf-8"))
     if builder is None:  # lazy: nightly/tests never import the builder
         from rocket.data.universe_builder import get_universe
-        builder = get_universe
+        builder = lambda: get_universe(force_refresh=True, write_cache=False)
     new_buckets = builder()
     now_iso = now_iso or datetime.now(timezone.utc).isoformat()
     reasons = guard_refresh(committed, new_buckets)

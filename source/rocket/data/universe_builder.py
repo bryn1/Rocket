@@ -1,3 +1,6 @@
+# reason: shared legacy universe builder (>600 lines, grandfathered) — MC 10264
+# F2 touches it with ONLY the additive write_cache param; a split-by-concern
+# pass is scheduled hygiene, not this card.
 """
 Rocket Stock Scanner - Dynamic Universe Builder
 
@@ -435,7 +438,8 @@ def _extract_tickers_from_wikipedia(page_name: str) -> list[str]:
     return sorted(all_tickers)
 
 
-def _build_universe(force_refresh: bool = False) -> dict[str, list[str]]:
+def _build_universe(force_refresh: bool = False,
+                    write_cache: bool = True) -> dict[str, list[str]]:
     """Build the ticker universe from index constituents.
 
     Strategy:
@@ -445,6 +449,10 @@ def _build_universe(force_refresh: bool = False) -> dict[str, list[str]]:
        b. Collect unique tickers per region
        c. Save to cache
        d. Return dict of {region: sorted_unique_tickers}
+    3. write_cache=False (MC 10264 F2): run entirely in memory — the tracked
+       universe_cache.json / index_constituents.json are NOT written. The
+       guarded refresh CLI (scripts/refresh_universe.py) is the ONLY writer
+       of the tracked registry, behind its own guard.
 
     Returns dict[str, list[str]] with keys:
         usa, sweden, uk, germany, france, japan,
@@ -550,9 +558,11 @@ def _build_universe(force_refresh: bool = False) -> dict[str, list[str]]:
     universe["international"] = sorted(intl)
     logger.info(f"  International (combined non-US): {len(universe['international'])} tickers")
 
-    # Save to both caches
-    _write_cache(universe)
-    _save_index_constituents(constituents_cache)
+    # Save to both caches — or, for in-memory builds (write_cache=False,
+    # MC 10264 F2), touch nothing on disk: the guarded CLI owns that write.
+    if write_cache:
+        _write_cache(universe)
+        _save_index_constituents(constituents_cache)
 
     total = {k: len(v) for k, v in universe.items()}
     logger.info(f"Universe built: {total}")
@@ -565,12 +575,16 @@ def _build_universe(force_refresh: bool = False) -> dict[str, list[str]]:
 _universe_cache: Optional[dict[str, list[str]]] = None
 
 
-def get_universe(region: str | None = None, force_refresh: bool = False) -> list[str] | dict[str, list[str]]:
+def get_universe(region: str | None = None, force_refresh: bool = False,
+                 write_cache: bool = True) -> list[str] | dict[str, list[str]]:
     """Get ticker universe.
 
     Args:
         region: Region key or None for all.
         force_refresh: If True, skip cache and fetch live data.
+        write_cache: If False, the (force) build is kept in memory and the
+            tracked cache files are left untouched (MC 10264 F2; the guarded
+            refresh CLI passes False).
 
     Returns:
         If region is specified, returns list[str] of tickers for that region.
@@ -578,7 +592,7 @@ def get_universe(region: str | None = None, force_refresh: bool = False) -> list
     """
     global _universe_cache
     if _universe_cache is None or force_refresh:
-        _universe_cache = _build_universe(force_refresh)
+        _universe_cache = _build_universe(force_refresh, write_cache)
 
     if region is None:
         return dict(_universe_cache)

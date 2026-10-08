@@ -6,6 +6,7 @@ explicitly untested by this card). universe_builder must never be imported
 at module import time (nightly never builds)."""
 import json
 import sys
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -133,3 +134,77 @@ def test_builder_imported_lazily_never_at_module_import():
     assert "rocket.data.universe_builder" in src    # the lazy in-function import
     # and it is NOT loaded merely by importing this module:
     assert "rocket.data.universe_builder" not in sys.modules or True
+
+
+# ── the DEFAULT path (builder=None) — T13 F2 (MC 10264) ─────────────────────
+# Every pre-F2 test injected builder=lambda:… — the seam REPLACED the writing
+# component, so the real default (the nightly's CLI run) was never exercised:
+# universe_builder._build_universe wrote the TRACKED universe_cache.json (and
+# index_constituents.json) BEFORE guard_refresh ran — a REFUSED refresh still
+# dirtied the tracked files (the degraded fallback sitting in the tree = the
+# owner's revert vector + a nightly S0 dirty-abort forever) while stderr
+# claimed "untouched". These tests run the real chain with the network seams
+# stubbed (zero network) and pin: builder write-free, guard decides, CLI is
+# the SOLE writer post-guard.
+
+def _stale_committed(tmp_path):
+    """Committed registry doc with a deliberately >24 h-old timestamp, so the
+    builder MUST build (never return the cache itself)."""
+    doc = _committed()
+    doc["timestamp"] = (datetime.now(timezone.utc)
+                        - timedelta(hours=48)).isoformat()
+    p = tmp_path / "universe_cache.json"
+    p.write_text(json.dumps(doc), encoding="utf-8")
+    ic = tmp_path / "index_constituents.json"
+    ic.write_text('{"keep": "me"}', encoding="utf-8")
+    return p, ic
+
+
+def _stub_builder_seams(monkeypatch, p, ic, fallback):
+    """universe_builder at tmp paths, its memo cleared, ALL fetch/file seams
+    dead (degraded build lands in the embedded fallback), fallback synthetic."""
+    import rocket.data.universe_builder as ub
+    monkeypatch.setattr(ub, "CACHE_FILE", p)
+    monkeypatch.setattr(ub, "INDEX_CONSTITUENTS_FILE", ic)
+    monkeypatch.setattr(ub, "_universe_cache", None)
+    monkeypatch.setattr(ub, "_load_us_tickers_from_csv", lambda: set())
+    monkeypatch.setattr(ub, "_load_tickers_from_local_source",
+                        lambda source: [])
+    monkeypatch.setattr(ub, "_extract_tickers_from_wikipedia",
+                        lambda page_name: [])
+    monkeypatch.setattr(ub, "_build_embedded_fallback",
+                        lambda: {r: list(v) for r, v in fallback.items() if v})
+
+
+def test_default_builder_refused_refresh_leaves_tracked_cache_untouched(
+        monkeypatch, tmp_path, capsys):
+    """F2 RED pair: degraded build + REFUSED guard -> tracked universe_cache
+    AND index_constituents BYTE-IDENTICAL (pre-F2 the builder's pre-guard
+    _write_cache left the fallback doc in the tree)."""
+    p, ic = _stale_committed(tmp_path)
+    _stub_builder_seams(monkeypatch, p, ic, _buckets(scale=0.3, drop="germany"))
+    cache_before, ic_before = p.read_bytes(), ic.read_bytes()
+    rc = ru.run_refresh(p, builder=None,
+                        now_iso="2026-10-08T04:00:00+00:00")
+    assert rc == 1                                   # degraded -> refused
+    assert "REFUSED" in capsys.readouterr().err      # ... and says so
+    assert p.read_bytes() == cache_before            # the claim is now TRUE
+    assert ic.read_bytes() == ic_before
+
+
+def test_default_builder_blessed_refresh_writes_through_the_cli_only(
+        monkeypatch, tmp_path):
+    """F2 green pair: the SAME force build, blessed -> the tracked file is
+    written by run_refresh (post-guard, atomic, CLI timestamp), and the
+    builder itself wrote nothing to disk."""
+    p, ic = _stale_committed(tmp_path)
+    fallback = _buckets(extra_region=True)
+    _stub_builder_seams(monkeypatch, p, ic, fallback)
+    cache_before, ic_before = p.read_bytes(), ic.read_bytes()
+    rc = ru.run_refresh(p, builder=None, now_iso="2026-10-08T04:00:00+00:00")
+    assert rc == 0
+    doc = json.loads(p.read_text(encoding="utf-8"))
+    assert doc["timestamp"] == "2026-10-08T04:00:00+00:00"   # the CLI's write
+    assert doc["tickers"]["brazil"] == ["NEW-br-1", "NEW-br-2"]
+    assert not list(tmp_path.glob("*.tmp"))          # atomic rename, no residue
+    assert ic.read_text(encoding="utf-8") == '{"keep": "me"}'
