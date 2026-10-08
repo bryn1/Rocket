@@ -38,7 +38,9 @@ rocket-demo-publish.timer  (systemd user-unit, OnCalendar 05:00:00 UTC, källa s
      └─ source/scripts/generate_demo_page.py
          0. registry  full_universe.load_plan — S0-golv FÖRE nätverk: version==2,
                       m_unique ≥ 10 000, ≥8 icke-tomma regioner, trackerad cache ren,
-                      krypningsankare m_unique ≥ 0.8× senast publicerad (C2-F5)
+                      krypningsankare m_unique ≥ 0.8× senast publicerad (C2-F5; ankaret
+                      saknas i committade stats än — utan ankare passerar kryptestet
+                      vakuum per design: natt 1 kan inte bricka, C3-F3c)
          1. fetch     store_io-klassificering (saknas/skadad/>28 d → backfill 1y,
                       annars delta 1mo) → batchad bulk_fetcher._fetch_batch (50 per
                       batch, stride-planering C3-F1); in-progress-bar stryps vid
@@ -127,7 +129,10 @@ efter merge är E4 (orchestrator).
 - `source/data/signals.db` — legacy SQLite från engine-eran, gitignored och **finns inte i
   checkouten idag**; endast `engine.py`:s CLI-väg. Nightly rör den aldrig.
 - Committade **root-artiklar**: `index.html` (regenereras nattligen), `indicator_stats.json`
-  (schema v1 + **tilläggblock** `sample` och `registry` — det senare är S0-krypningsankaret),
+  (committade filen är än så länge bara schema v1; **tilläggblocken** `registry` (skrivs av
+  generatorns `_with_registry_anchor` vid varje v3-publicering — det är S0-krypningsankaret)
+  och `sample` (skrivs av `sample_backtest.py` den v3-natt som kör sample-backtesten,
+  bärs därefter vidare)) landar alltså först med v3-nattarna, efter MC 10227),
   `top25.json` (frozen snapshot).
 - `.tmp/run_manifest.json` — kör-manifest (partition, per-region datum, timings); **ej
   committad**, scratch.
@@ -153,7 +158,9 @@ efter merge är E4 (orchestrator).
    Separat fix-kort.
 2. **Dash-sidan i `app.py` scorear 28/34.** Sex mönsterindikatorer kastar tyst `KeyError`
    på lowercase-frames. Den nattliga vägen är 34/34 — `to_indicator_frame`-omvandlaren
-   appliceras i `score_all.py` och `sample_backtest.py` — men Dash-UI:t väntar fortfarande
+   appliceras direkt i `score_all.py`, och i sample-vägen inuti löparen
+   `rocket/backtest/indicator_eval.py` (`run_indicator_eval`; `sample_backtest.py`
+   importerar den inte själv) — men Dash-UI:t väntar fortfarande
    på samma omvandlare i sin egen väg. Follow-up-kort.
 3. **Frozen snapshots:** `region-top25.html` + `top25.json` (samt `portfolio.html`) har
    ingen generator i repo och uppdateras inte — serveras som orörda snapshots.

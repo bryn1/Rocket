@@ -25,16 +25,18 @@ per-category sub-scores for Momentum, Trend, Volatility and Volume. The full lis
 
 ## The hosted page is a daily snapshot of the full universe
 
-The page at **https://sibbamala.com/rocket/** is a **static, read-only snapshot** — it is not
-a live scan. It covers the **whole tracked universe**: every ticker in the registry
+The nightly pipeline in this tree fetches, scores and publishes to
+**https://sibbamala.com/rocket/** a **static, read-only snapshot** — not a live scan —
+covering the **whole tracked universe**: every ticker in the registry
 `source/rocket/data/universe_cache.json` — **12,793 unique tickers across 15 regions**
 (usa 6,652, india 1,798, hongkong 1,122, japan 997, sweden 742, uk 356, norway 293, finland
 194, australia 151, denmark 145, canada 144, korea 100, switzerland 35, germany 32, france 32;
 registry timestamped 2026-09-13) — fetched and scored fresh on every nightly run. Concretely:
 
 - **Every scored ticker** appears in its region tab; the **Alla** panel shows the **Top-500 by
-  score**, and the filter box searches **every** panel, so any of the ~12.8k tickers is findable
-  (a hit reveals the row and names its region)
+  score**, and the filter box searches **every** panel, so any **scored** ticker is findable
+  (rows exist only for scored tickers — the guard floor below guarantees ≥5,117 of them;
+  a hit reveals the row and names its region)
 - **~1 year of daily OHLCV** per ticker, delta-appended nightly into a local CSV store; only
   *settled* bars are stored (an in-progress session bar is stripped at write time)
 - **Regenerated nightly** by the systemd user timer `rocket-demo-publish.timer` (05:00 UTC). The
@@ -47,13 +49,19 @@ registry timestamped 2026-09-13) — fetched and scored fresh on every nightly r
   shrink is visible on the page as `scorerade 35 av 12793` — and cannot pass the guard.
 
 It remains honest about what it is: **read-only** (no live queries, no autotrading), a
-**snapshot** regenerated once a day, and the detail tab surfaces a representative signal per
-category rather than all 34 indicators. The Indikatorer tab shows per-indicator backtest
+**snapshot** regenerated once a day, and each region row carries the signal plus four
+per-category sub-scores (Momentum, Trend, Volatility, Volume) rather than all 34
+indicators. The Indikatorer tab shows per-indicator backtest
 evidence (signal counts, hit-rate and net % per horizon) from a deterministic **500-ticker
 stratified sample**, redrawn **weekly (Saturday)** and carried with an explicit cadence note
 on other days. It makes **no claim** of live data. The full-universe scope is the owner's
 restored product (ruling 2026-10-07, MC 10220): the September universe coverage on today's
 layout, updated daily.
+
+> **Cutover status (2026-10-08 — delete at cutover close-out):** everything above describes the
+> product on this branch, status **TESTED** (same scoper as `docs/ARCHITECTURE.md` "Läsregel");
+> the URL above still serves the pre-cutover 35-ticker page until the first full-scale nightly
+> lands (**MC 10227**, pending).
 
 ## Nightly pipeline
 
