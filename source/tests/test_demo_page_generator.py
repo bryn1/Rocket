@@ -5,7 +5,10 @@ plan = full_universe.UniversePlan per the §9 contract (>=5 regions, named
 returns) — shared fixtures in demo_page_fixtures.py, publish (§6a + step-2b)
 tests in test_demo_publish.py. ALL fixture dates are RUN-RELATIVE (C3-F3d);
 the only absolute pin is the golden-35 dict (it IS the f2c02f6 published
-page), whose test skips when the nightly store is absent.
+page) and it lives with the FROZEN fixture store it scores in
+test_golden35_fixtures.py (MC 10304): reading the live nightly store made it
+a daily time-bomb (that store moved MSFT 57.8 -> 59.8 on the 2026-10-08
+refetch), so it is pinned to committed, byte-locked fixture bytes instead.
 """
 import importlib.util
 import json
@@ -37,7 +40,7 @@ spec.loader.exec_module(gen)
 
 import demo_page_fixtures as fx  # noqa: E402,F401 (pin asserts run on import)
 from demo_page_fixtures import (          # shared with test_demo_publish.py
-    FRESH_BAR, GENERATED_AT, GOLDEN_35, NOW, PLAN, SAMPLE_DOC,
+    FRESH_BAR, GENERATED_AT, NOW, PLAN, SAMPLE_DOC,
     STALE_BAR, expected_bar_date as _expected_bar_date, html as _html,
     iso as _iso, mk_frame as _mk_frame, mk_row as _mk_row,
     scored_by_region as _scored_by_region, scored_out as _scored_out,
@@ -512,29 +515,11 @@ def test_score_from_summary_hongkong_resolves(tmp_path, monkeypatch):
         app._score_from_summary(summary, ticker="X", region="hongkong")
 
 
-
-
-def test_golden35_scores_unchanged_by_region_map():
-    """§3 test (b): the 35 demo tickers score EXACTLY as published at
-    f2c02f6 through the same app seam (usa/sweden/germany mappings kept)."""
-    missing = [t for t in GOLDEN_35
-               if not (full_universe.CACHE_DIR
-                       / full_universe.cache_filename(t)).exists()]
-    if missing:
-        pytest.skip("golden-35 needs the nightly store (source/data/raw) — "
-                    f"absent: {missing[:3]}… (skipped on clean checkouts)")
-    import app
-    from rocket.backtest.indicator_eval import to_indicator_frame
-    region_of = lambda t: ("sweden" if t.endswith(".ST")
-                           else "germany" if t.endswith(".DE") else "usa")
-    for ticker, expected in GOLDEN_35.items():
-        df = store_io.read_cache(full_universe.CACHE_DIR
-                                 / full_universe.cache_filename(ticker))
-        idf = to_indicator_frame(df)
-        summary, _ = app._compute_all_indicators(idf)
-        rs = app._score_from_summary(summary, ticker=ticker,
-                                     region=region_of(ticker))["rocket_score"]
-        assert f"{rs.overall_score:.1f}" == expected, ticker
+# §3 test (b) — the golden-35 continuity pin — lives in
+# test_golden35_fixtures.py (MC 10304): it runs on the FROZEN committed
+# fixture store fx.GOLDEN35_DIR, byte-locked by its SHA256SUMS manifest, and
+# never on the live nightly store (which the nightly rewrites daily, so the
+# pin there went RED every refetch: MSFT 57.8 -> 59.8 on 2026-10-08).
 
 
 # ── G4 (static half): no hardcoded universe in pipeline sources ─────────────
