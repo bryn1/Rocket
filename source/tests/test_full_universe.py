@@ -259,3 +259,48 @@ def test_junk_dies_in_completed_batches_not_not_fetched(fixture_plan):
                 has_usable_store=False)
     nf = sum(1 for c in contig_assign.values() if c == store_io.NOT_FETCHED)
     assert nf == fx.BATCH
+
+
+# ── T13 F3/F4 (MC 10264): production batch shape + bounded digit-junk ───────
+
+def test_make_batches_production_shape_12793_members():
+    """ARCH T10 F-1 / DA T9 F3: at the REAL registry size the walk must emit
+    ceil(n/size) batches of <= size members — 256 x <=50 (bulk_fetcher.
+    BATCH_SIZE, ARCHITECTURE.md:43, the measured 2.1-3.5 s per-batch basis) —
+    NEVER the old size-buckets-of-ceil(n/size) shape (50 x 256: one dead call
+    = 256 not_fetched, measured timeout math void)."""
+    items = [f"TT{i:05d}" for i in range(12_793)]
+    batches = fu.make_batches(items)
+    assert len(batches) == -(-12_793 // fx.BATCH) == 256
+    assert all(0 < len(b) <= fx.BATCH for b in batches)
+    assert sorted(t for b in batches for t in b) == items   # exact partition
+    assert fu.make_batches(items) == batches                # deterministic
+
+
+def test_digit_junk_residue_block_spread_max_one_per_batch():
+    """DA T9 F4: the residue-aligned numeric block that STACKED a 100 %-junk
+    batch under the old size-stride (indices 5,55,...,455 -> batch items
+    [5::50]) is now bounded — junk <= batch count means <= ONE digit-only
+    member per batch, whatever the alignment."""
+    junk_idx = set(range(5, 500, 50))         # 10 members, ALL on one stride
+    items = [str(1900 + i) if i in junk_idx else f"TT{i:04d}"
+             for i in range(500)]
+    # stride the OLD way (items[j::50]) puts every junk member in one batch;
+    # assert the multiset first (order-free), then the bound.
+    batches = fu.make_batches(items)
+    assert sorted(t for b in batches for t in b) == sorted(items)
+    assert len(batches) == 10                 # junk count == batch count
+    for k, b in enumerate(batches):
+        assert sum(1 for t in b if fx.is_junk(t)) <= 1, f"batch {k} stacks junk"
+        assert not all(fx.is_junk(t) for t in b)           # never all-dead-by-name
+
+
+def test_make_batches_500_live_deterministic_small_shape():
+    """Shape law pinned at a second size: n == ceil(len/size), sizes <= size,
+    empty input -> [] (and never an empty batch)."""
+    items = [f"TT{i:04d}" for i in range(500)]
+    batches = fu.make_batches(items)
+    assert len(batches) == 10 and all(len(b) == 50 for b in batches)
+    assert fu.make_batches([]) == []
+    assert all(b for b in fu.make_batches(items, 7))       # size not dividing
+    assert sorted(t for b in fu.make_batches(items, 7) for t in b) == items

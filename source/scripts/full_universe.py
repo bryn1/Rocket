@@ -205,23 +205,64 @@ def _assert_cache_clean(path: Path) -> None:
             f"(refresh via scripts/refresh_universe.py, commit first)")
 
 
-# ── deterministic fetch batching (DA-verdict-c3 C3-F1, P1) ─────────────────
+# ── deterministic fetch batching (C3-F1 + T13 F3/F4, MC 10264) ──────────────
 BATCH_SIZE = 50                 # == bulk_fetcher.BATCH_SIZE (kept in sync here
                                 # so the loader stays import-free of yfinance)
 
 
 def make_batches(tickers: list[str], size: int = BATCH_SIZE) -> list[list[str]]:
-    """Deterministic STRIDE (round-robin) batching of the plan-ordered list:
-    batch j = items[j], items[j+size], items[j+2*size], ...
+    """Deterministic STRIDE batching by BATCH COUNT (T13 F3, ARCH T10 F-1):
+    n = ceil(len/size) batches, batch j = items[j::n] — every batch carries
+    <= size members, so at the live 12,793 registry the walk is 256 batches
+    of max 50, exactly the DESIGN §5 / ARCHITECTURE.md:43 unit the measured
+    2.1-3.5 s per-batch and TimeoutStartSec math were timed on (the retired
+    items[j::size] form shipped 50 batches of 256 — one dead yf.download =
+    256 not_fetched). Never a contiguous window (C3-F1).
 
-    Pure function (identical input -> identical output, no RNG). Never a
-    contiguous window: the registry's longest all-numeric junk run is 59
-    (live-probed, C3-F1), so with stride ``size`` a batch is 100 % junk only
-    if a >= size-spaced lattice lands entirely inside junk runs — impossible
-    while any live ticker shares the batch, which is what keeps a real Yahoo
-    death (ALL batches {}) distinct from one deterministically dead batch.
-    """
+    Digit-only-looking tickers are spread round-robin on top of the walk
+    (T13 F4): every batch carries <= ceil(junk/n) of them, so while the
+    registry holds no more digit-junk than batches (live: 79 << 256) NO batch
+    can carry more than one — BOUNDED BY CONSTRUCTION for the digit-junk
+    class, with a ValueError if the distributor itself ever breaks the cap.
+    Honest limit: other all-dead orderings are NOT disproved — a batch of
+    fetch-dead live tickers still fails closed via not_fetched -> §9 #1 floor.
+    Pure function (identical input -> identical output, no RNG)."""
     if size <= 0:
         raise ValueError(f"batch size must be positive, got {size}")
-    batches = [list(tickers[j::size]) for j in range(min(size, len(tickers)))]
-    return [b for b in batches if b]
+    n = -(-len(tickers) // size)                       # ceil(len/size) batches
+    batches = [list(tickers[j::n]) for j in range(n)]
+    _spread_digit_junk(batches)
+    return batches
+
+
+def _spread_digit_junk(batches: list[list[str]]) -> None:
+    """In-place: rebalance digit-only-looking members so each batch carries
+    <= ceil(total/len(batches)) of them. Swaps only — batch sizes, the
+    partition and the walk's determinism are preserved; deterministic order
+    (sources/targets by index)."""
+    if not batches:
+        return
+    junk_per = [sum(1 for t in b if t.isdigit()) for b in batches]
+    cap = -(-sum(junk_per) // len(batches))            # ceil(junk/batch_count)
+    if max(junk_per) <= cap:
+        return
+    for src in range(len(batches)):
+        while junk_per[src] > cap:
+            tgt = next((k for k in range(len(batches))
+                        if k != src and junk_per[k] < cap
+                        and any(not t.isdigit() for t in batches[k])), None)
+            if tgt is None:                            # distributor stuck —
+                break                                  # caught by the check
+            i = next(i for i, t in enumerate(batches[src]) if t.isdigit())
+            j = next(j for j, t in enumerate(batches[tgt])
+                     if not t.isdigit())
+            batches[src][i], batches[tgt][j] = batches[tgt][j], batches[src][i]
+            junk_per[src] -= 1
+            junk_per[tgt] += 1
+    for k, count in enumerate(junk_per):
+        if count > cap:
+            raise ValueError(
+                f"digit-junk bound violated: batch {k} carries {count} > cap "
+                f"{cap} of {sum(junk_per)} digit-only members over "
+                f"{len(batches)} batches — registry too junk-dense to batch "
+                f"safely (fail closed, not stacked)")

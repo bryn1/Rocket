@@ -95,6 +95,12 @@ def test_fetch_store_not_fetched_and_partition(tmp_path, monkeypatch, capsys):
     plan = full_universe.UniversePlan(
         regions={"usa": ["A", "B"], "india": ["I1"]},
         order=["usa", "india"], m_unique=3)
+    # T13 F3 batch-count stride: one backfill batch is [A, B, I1] together,
+    # so the never-returned 6th-region member needs its OWN batch — A and B
+    # get fresh stores (delta bucket); I1 stays missing (backfill bucket).
+    for t in ("A", "B"):
+        store_io.upsert(t, "usa", _mk_frame(), cache_dir=tmp_path,
+                        replace=True, now_fn=lambda: NOW)
 
     def fetcher(batch, period):       # the 6th-region stub: never returns
         if all(t.startswith("I") for t in batch):
