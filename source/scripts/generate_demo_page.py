@@ -1,7 +1,7 @@
 # reason: generator v3 orchestration (DESIGN §6 stages 0-6) — the nightly
 # entry point by mandate; past the 250 soft target, under the 400 hard
 # ceiling (publish mechanics -> demo_publish.py, indicator branch ->
-# demo_indicators.py).
+# demo_indicators.py, settled-bar gate -> demo_render.py).
 #!/usr/bin/env python3
 """Generate the daily demo page (index.html) — generator v3 (MC 10223).
 
@@ -15,8 +15,8 @@ publish (demo_publish: §6a sync-before-write, 2b, ls-remote proof).
 --dry-run applies ALL floors before writing (F6); --skip-fetch renders from
 the store (exempts §9 #3's not_fetched == 0 only); --force-backtest forces
 the weekly redraw; ROCKET_FORCE_EMPTY_UNIVERSE=1 swaps in the EMPTY FIXTURE
-PLAN — the deterministic guard red case. Run manifest .tmp/run_manifest.json
-(scratch); the gate's prev-green bar reads only PUBLISHED entries.
+PLAN — the deterministic guard red case. .tmp/run_manifest.json (scratch):
+prev-green reads PUBLISHED only — a green --dry-run writes its .dry sibling.
 """
 from __future__ import annotations
 
@@ -140,7 +140,12 @@ def fetch_store(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
             empty_note(batch)
     if split_requeue:                        # §5 3b: full 1y replaces the file
         for batch in full_universe.make_batches(sorted(split_requeue)):
-            res = fetcher(batch, store_io.PERIOD_BACKFILL)
+            try:
+                res = fetcher(batch, store_io.PERIOD_BACKFILL)
+            except (Exception, SystemExit) as exc:      # T13 F7: ANY abort or
+                print(f"FAIL-CLOSED — split-requeue-fetch dog: {exc}",
+                      file=sys.stderr)          # raise is systemd-greppable
+                sys.exit(1)
             if res:
                 absorb(batch, res, backfill=True)
             else:
@@ -205,19 +210,11 @@ def _prev_green_bar() -> str | None:
 
 
 def _settled_gate_ok(data_last_bar: str, run_iso: str,
-                    prev_green: str | None) -> bool:
-    """§9 #6 settled-bar gate, C3-F3a correction: PASS when stored data has
-    not regressed since the last green publish (monotonic freshness — covers
-    holiday nights where the weekday rule, which has NO holiday calendar,
-    false-reds), OR the weekday rule passes. Copy never claims holidays pass
-    from the weekday rule alone."""
-    if prev_green and data_last_bar and data_last_bar >= prev_green:
-        return True
-    if not prev_green:
-        print("settled-bar gate: ingen publicerad run_manifest — prövar "
-              "veckodagsregeln ensam (saknar helgedagskalender)",
-              file=sys.stderr)
-    return not demo_render.is_stale(run_iso, data_last_bar)
+                     prev_green: str | None) -> bool:
+    """§9 #6 settled-bar gate (C3-F3a). The rule itself lives in demo_render
+    beside is_stale — freshness rules keep ONE home (T13, MC 10264); this
+    module-level name is the guard's and the tests' seam."""
+    return demo_render.settled_gate_ok(data_last_bar, run_iso, prev_green)
 
 
 def _guard(html_text: str, plan, assignments: dict, scored_by_region: dict,
@@ -275,9 +272,11 @@ def publish(html_text: str, stats_text: str | None, markers: list[str]) -> str:
                                 repo_root=REPO_ROOT)
 
 
-def _write_manifest(doc: dict) -> None:
+def _write_manifest(doc: dict, *, dry: bool = False) -> None:
     DRY_DIR.mkdir(exist_ok=True)
-    MANIFEST_PATH.write_text(json.dumps(doc, indent=2), encoding="utf-8")
+    path = MANIFEST_PATH.with_name(f"{MANIFEST_PATH.stem}.dry.json") if dry \
+        else MANIFEST_PATH               # F6 (MC 10264): dry runs never touch
+    path.write_text(json.dumps(doc, indent=2), encoding="utf-8")   # the anchor
 
 
 def _with_registry_anchor(doc: dict | None, plan) -> dict | None:
@@ -385,7 +384,7 @@ def main() -> None:
         if stats_text is not None:
             (DRY_DIR / "indicator_stats.json").write_text(
                 stats_text, encoding="utf-8")
-        _write_manifest({**manifest, "published": None})
+        _write_manifest({**manifest, "published": None}, dry=True)
         print(f"Dry run — rendered {DRY_DIR / 'index.html'}: {rows} tickers, "
               f"{len(errors)} notes: {errors[:10]}")
         return

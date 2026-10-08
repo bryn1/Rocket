@@ -11,6 +11,7 @@ deterministic for fixed inputs.
 from __future__ import annotations
 
 import math
+import sys
 from datetime import datetime, timedelta
 
 from full_universe import ALLA_CAP, region_label
@@ -140,6 +141,23 @@ def is_stale(run_iso: str, data_last_bar: str) -> bool:
     while expected.weekday() >= 5:        # Sat/Sun fetch → step back to Friday
         expected -= timedelta(days=1)
     return bar < expected
+
+
+def settled_gate_ok(data_last_bar: str, run_iso: str,
+                    prev_green: str | None) -> bool:
+    """§9 #6 settled-bar gate, C3-F3a correction: PASS when stored data has
+    not regressed since the last green publish (monotonic freshness — covers
+    holiday nights where the weekday rule, which has NO holiday calendar,
+    false-reds), OR the weekday rule passes. Copy never claims holidays pass
+    from the weekday rule alone. Moved out of the generator (MC 10264): the
+    freshness rules keep ONE home — this gate composes is_stale above."""
+    if prev_green and data_last_bar and data_last_bar >= prev_green:
+        return True
+    if not prev_green:
+        print("settled-bar gate: ingen publicerad run_manifest — prövar "
+              "veckodagsregeln ensam (saknar helgedagskalender)",
+              file=sys.stderr)
+    return not is_stale(run_iso, data_last_bar)
 
 
 def _table(rows: list[dict], panel_id: str, label: str | None = None,

@@ -132,6 +132,38 @@ def test_skip_fetch_exempt_not_fetched_only():
     assert not any("not_fetched" in r for r in reasons)
 
 
+def test_split_requeue_fetch_death_is_fail_closed(tmp_path, monkeypatch,
+                                                  capsys):
+    """T13 F7 (MC 10264): the §5 3b split-re-queue fetch was the one fetcher
+    call WITHOUT the stage's fail-closed vocabulary — a raising/aborting
+    fetcher there died with a bare traceback (E3 grep miss). Now: any abort or
+    exception prints the greppable FAIL-CLOSED line BEFORE exiting."""
+    import rocket.data.bulk_fetcher as bf
+    monkeypatch.setattr(bf, "BATCH_DELAY", 0)
+    monkeypatch.setattr(store_io, "split_break_detected",
+                        lambda stored, fetched: True)   # the §5 3b trigger
+    plan = full_universe.UniversePlan(regions={"usa": ["A", "B"]},
+                                      order=["usa"], m_unique=2)
+    store_io.upsert("A", "usa", _mk_frame(), cache_dir=tmp_path,
+                    replace=True, now_fn=lambda: NOW)   # A -> delta bucket
+
+    calls = []
+
+    def fetcher(batch, period):
+        calls.append((tuple(batch), period))
+        if batch == ["A"] and period == store_io.PERIOD_BACKFILL:
+            raise RuntimeError("yf.download died mid-requeue (planted)")
+        return {t: _mk_frame() for t in batch}
+
+    with pytest.raises(SystemExit) as e:
+        gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,
+                        cache_dir=tmp_path, fetcher=fetcher, errors=[])
+    assert e.value.code == 1
+    err = capsys.readouterr().err
+    assert "FAIL-CLOSED" in err and "split" in err.lower()
+    assert (tuple(["A"]), store_io.PERIOD_BACKFILL) in calls
+
+
 # ── stage 5: guards (planted-red proofs) ────────────────────────────────────
 
 def _html(**kw):
@@ -159,6 +191,21 @@ def test_guard_scored_floor(floors_patched):
     floors_patched.setattr(gen, "HARD_SCORED_FLOOR", 9_999)
     reasons = _guard()
     assert reasons and "scorerade rader (golv 9999)" in reasons[0]
+
+
+def test_guard_scored_floor_equality_green_and_below_red(floors_patched):
+    """T7-P3 (MC 10264): §9 #1 is `scored >= golv` — EQUALITY must PASS. The
+    TEST-verdict mutation `total < floor` -> `total <= floor` survived every
+    pre-Fix test; pinning the boundary BOTH sides kills it."""
+    floors_patched.setattr(gen, "HARD_SCORED_FLOOR", PLAN.m_unique)
+    floors_patched.setattr(gen, "SCORED_FLOOR_FRACTION", 0.0)
+    full = _scored_by_region()
+    assert sum(len(r) for r in full.values()) == PLAN.m_unique
+    assert _guard(prev=FRESH_BAR, results=full) == []      # == floor: GREEN
+    below = {r: (rows[:-1] if r == "usa" else rows)
+             for r, rows in full.items()}
+    reasons = _guard(prev=FRESH_BAR, results=below)
+    assert any(f"scorerade rader (golv {PLAN.m_unique})" in r for r in reasons)
 
 
 def test_guard_g6_names_hongkong_and_unfetched(floors_patched):
@@ -244,11 +291,32 @@ def test_green_dry_run_writes_tmp_files_only(monkeypatch, tmp_path):
     assert art["schema_version"] == 1
     assert art["registry"] == {"m_unique": 51,
                                "registry_ts": PLAN.registry_ts}  # S0 anchor
-    man = json.loads((tmp_path / "manifest.json").read_text())
+    # T13 F6: a dry-run's diagnostics live in a SEPARATE dry manifest — the
+    # settled-gate manifest.json is off-limits to dry (anchor test below).
+    man = json.loads((tmp_path / "manifest.dry.json").read_text())
     assert man["published"] is None and man["m_unique"] == 51
     assert man["prev_green_data_last_bar"] is None
+    assert not (tmp_path / "manifest.json").exists()  # anchor file untouched
     assert not (tmp_path / "root-index.html").exists()      # roots untouched
     assert not (tmp_path / "root-stats.json").exists()
+
+
+def test_green_dry_run_never_clobbers_the_prev_green_anchor(monkeypatch,
+                                                            tmp_path):
+    """T13 F6 / ARCH T10 F-2: a green REAL publish sets the settled-gate
+    anchor; a green --dry-run afterwards must not erase it — a later
+    _prev_green_bar() still returns the last published run's bar."""
+    _wire_main(monkeypatch, tmp_path, dry=False)
+    gen.main()
+    man = tmp_path / "manifest.json"
+    anchor = man.read_bytes()
+    assert gen._prev_green_bar() == FRESH_BAR        # anchor live after publish
+    _wire_main(monkeypatch, tmp_path, dry=True)
+    gen.main()                                       # green dry run
+    assert man.read_bytes() == anchor                # byte-identical: not clobbered
+    assert gen._prev_green_bar() == FRESH_BAR        # next night still sees it
+    dry_doc = json.loads((tmp_path / "manifest.dry.json").read_text())
+    assert dry_doc["published"] is None              # dry diagnostics on dry file
 
 
 def test_non_dry_publishes_and_manifest_ratchets_prev_green(monkeypatch,
