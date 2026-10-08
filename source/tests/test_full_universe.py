@@ -155,14 +155,25 @@ def test_cache_filename_extended_escape():
 
 
 def test_real_registry_plan_matches_design_numbers():
-    """§2 digit pins on the REAL tracked cache (read-only, no network)."""
+    """§2 digit pins on the REAL tracked cache (read-only, no network).
+
+    Re-pinned by MC 10336 (suffix hygiene): uk/australia/canada store their
+    Yahoo primary suffix (.L/.AX/.TO), switzerland carries verified .SW.
+    m_unique 12,793 -> 12,691 (junk purged, bare-collisions dropped, Swiss
+    non-resolvers dropped, cross-region dedup freed by suffixing);
+    switzerland (15) now sorts below france (32) by size; dropped 0 -> 686
+    because the international AGGREGATE still carries the pre-suffix forms —
+    inert okontrollerat (never tabbed/fetched), a known future-cleanup item
+    for universe_builder (the aggregate's owner), NOT a loader regression.
+    The old numbers pinned the suffix-LESS form — that was the bug.
+    """
     plan = fu.load_plan()
-    assert plan.m_unique == 12793
+    assert plan.m_unique == 12691
     assert list(plan.order) == ["usa", "sweden", "germany", "india",
                                 "hongkong", "japan", "uk", "norway",
                                 "finland", "australia", "denmark", "canada",
-                                "korea", "switzerland", "france"]
-    assert plan.dropped == []          # 0 exclusive international members
+                                "korea", "france", "switzerland"]
+    assert len(plan.dropped) == 686    # international's stale pre-suffix forms
     assert {r: len(v) for r, v in plan.regions.items()}["usa"] == 6652
     stems = [fu.cache_filename(t) for r in plan.order for t in plan.regions[r]]
     assert len(set(stems)) == len(stems)
