@@ -8,7 +8,11 @@ dates. Cases per the fix dispatch:
 (c) REGRESSION: clean steady state is byte-identical behavior (BATCH_DELAY
     sleeps, no cooldown, no STARVED line);
 (d) honest DEAD_AT_FETCH: frame fetched but store death — the one class that
-    legitimately keeps batch_completed=True without a file (§4 #4).
+    legitimately keeps batch_completed=True without a file (§4 #4);
+(e) T20 (MC 10311): the end-of-stage RE-QUEUE round is paced by the SAME
+    rule and the SAME ladder state as the main walk (one walk conceptually),
+    the main-walk sleep sequence stays byte-identical, COOLDOWN stays
+    exactly-once, and a re-queue event climbs from the rung the walk stopped at.
 """
 import sys
 import time
@@ -156,8 +160,11 @@ def single_batch_env(monkeypatch, hot_env):
     return hot_env
 
 
-def _scripted(tmp_path, sleeps, script, extra=0):
-    tickers = [f"TK{i}" for i in range(len(script) + extra)]
+def _scripted(tmp_path, sleeps, script, extra=0, n=None):
+    """`n` tickers (default one per scripted call); the fetcher is scripted BY
+    CALL INDEX, so script items past the main walk land IN the re-queue round."""
+    tickers = [f"TK{i}" for i in range(
+        n if n is not None else len(script) + extra)]
     plan = _plan(tickers)
     calls = []
 
@@ -191,7 +198,9 @@ def test_ladder_steps_cool_down_and_reset_after_five_clean(tmp_path,
                       4.0,                                 # event 3 climbs on
                       0.5, 0.5, 0.5, 0.5, 0.5,             # 5 clean: reset
                       1.0,                                 # event back to 1 s
-                      999.0]                               # ONE cooldown
+                      999.0,                               # ONE cooldown
+                      0.5, 0.5, 0.5, 0.5]                  # T20: re-queue paced
+    assert sleeps.count(999.0) == 1                        # still exactly-once
     assert len(errors) == 4                    # events ride errors as before
     assert "Too Many Requests" in errors[0]
     # the four throttled batches were re-queued and succeeded there:
@@ -206,8 +215,63 @@ def test_non_rate_limit_error_keeps_generic_path(tmp_path, single_batch_env):
     sleeps = single_batch_env
     script = [_rl(), RuntimeError("planted non-RL boom"), _rl()]
     facts, errors, calls = _scripted(tmp_path, sleeps, script)
-    assert sleeps == [1.0, 0.5, 2.0, 999.0]
+    assert sleeps == [1.0, 0.5, 2.0, 999.0, 0.5, 0.5, 0.5]
     assert any("planted non-RL boom" in e for e in errors)
+
+
+# ── (e) T20 (MC 10311): the re-queue round is paced too ──────────────────────
+
+def test_requeue_round_is_paced_and_the_ladder_crosses_the_boundary(tmp_path,
+                                                                   single_batch_env,
+                                                                   capsys):
+    """RED-BEFORE (06): the re-queue round used to call the fetcher back-to-
+    back with ZERO sleeps — exactly the calls most likely to 429. Same rule,
+    same state: an event IN the round steps from the rung the main walk
+    stopped at (streak 2 -> 4 s -> 8 s), and COOLDOWN stays exactly once,
+    BEFORE the round — never a second one after more events (c)."""
+    sleeps = single_batch_env
+    facts, errors, calls = _scripted(tmp_path, sleeps, [_rl()] * 4, n=2)
+    assert sleeps == [1.0, 2.0,                             # main walk rungs
+                      999.0,                               # ONE cooldown
+                      4.0, 8.0]                            # rungs CONTINUE
+    assert sleeps.count(999.0) == 1
+    assert len(calls) == 4 and len(errors) == 2            # round adds no errors
+    assert all(f["batch_completed"] is False for f in facts.values())
+    assert "BATCH-EMPTY-OR-DEAD" in capsys.readouterr().err
+
+
+def test_clean_requeue_round_paced_main_walk_unchanged(tmp_path,
+                                                      single_batch_env):
+    """(a)+(b)+(c) together, clean re-queue: 2 events then 4 clean in the
+    MAIN WALK (sequence identical to the pre-T20 pin, rungs and all), ONE
+    cooldown, then the 2 re-queued batches sleep BATCH_DELAY like any other
+    batch — one walk conceptually, not a second sleep mechanism."""
+    sleeps = single_batch_env
+    facts, errors, calls = _scripted(tmp_path, sleeps, [_rl(), _rl()], n=6)
+    assert sleeps == [1.0, 2.0, 0.5, 0.5, 0.5, 0.5, 999.0, 0.5, 0.5]
+    assert 999.0 == sleeps[6] and sleeps.count(999.0) == 1
+    assert len(calls) == 8 and len(errors) == 2
+    assert all(f["batch_completed"] for f in facts.values())
+
+
+def test_clean_requeue_round_without_events_has_no_cooldown(tmp_path,
+                                                            single_batch_env):
+    """(c) the iff's zero side, WITH a re-queue round present: a {} batch
+    re-queued without any rate-limit event sleeps BATCH_DELAY per batch and
+    NEVER the cooldown sentinel — pacing must not become a backoff."""
+    sleeps = single_batch_env
+    plan = _plan(["TK0", "TK1", "TK2", "TK3"])
+    calls = []
+
+    def fetcher(batch, period):
+        calls.append(batch[0])
+        return {} if len(calls) <= 2 else {batch[0]: _mk_frame()}
+
+    facts = gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,
+                            cache_dir=tmp_path, fetcher=fetcher)
+    assert sleeps == [0.5] * 6 and 999.0 not in sleeps   # 4 walk + 2 round
+    assert len(calls) == 6
+    assert all(f["batch_completed"] for f in facts.values())
 
 
 # ── (c) REGRESSION: clean steady state unchanged ────────────────────────────

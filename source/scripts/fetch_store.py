@@ -21,10 +21,21 @@ batch exception sleeps the next RL_LADDER rung instead of BATCH_DELAY
 BATCH_DELAY entry); RL_RESET_AFTER consecutive clean batches reset the
 ladder (the 5-clean reset is the decay rule — a lone clean batch neither
 sleeps the ladder nor erases the streak). If ANY event was seen, one
-COOLDOWN sleep runs before the re-queue round. Budget arithmetic (worst
-case, every batch throttled): 2 period buckets x 256 batches x 10 s cap
-= 5,120 s sleep + 60 s cooldown + ~512 x (2.1-3.5 s) fetch ≈ 7,000 s —
-inside the 10,800 s TimeoutStartSec of rocket-demo-publish.service."""
+COOLDOWN sleep runs before the re-queue round — unchanged, exactly once.
+That round is paced by the SAME helper and the SAME ladder state (T20,
+MC 10311: it is the same walk, and its ~512 back-to-back calls were the
+ones most likely to 429). Budget arithmetic, SLEEP at its worst (every
+batch of BOTH rounds throttled): 512 walk x 10 s cap + 60 s cooldown +
+<=512 re-queue x 10 s cap = 10,300 s < 10,800 s TimeoutStartSec of
+rocket-demo-publish.service (the round cannot exceed the walk's batch
+count: batches partition the members and the starved re-batch at the same
+size). The two per-call maxima cannot coincide: the
+measured 2.1-3.5 s belongs to a SUCCESSFUL batch, which by definition
+paces at BATCH_DELAY (all-clean bound ~1,024 x (0.5 + 3.5) = ~4,100 s),
+while a throttled call is a fast 429 raise. Honest residual: the
+all-throttled bound leaves ~500 s for ~1,024 raises (~0.5 s each), so a
+slow-raising Yahoo could cross it — the unit timeout, not this math,
+bounds that night (which lands nothing anyway)."""
 from __future__ import annotations
 
 import sys
@@ -95,6 +106,25 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
         print(f"BATCH-EMPTY-OR-DEAD batch={','.join(batch[:3])} n={len(batch)}",
               file=sys.stderr)
 
+    def pace(rate_limited: bool) -> None:
+        """ONE pacing rule for the WHOLE stage (T20, MC 10311): the main walk
+        and the end-of-stage re-queue round are one walk, so they share this
+        helper and the rl_* state behind it — clean batch -> BATCH_DELAY,
+        event -> next ladder rung; a rung reached in the round continues the
+        streak the main walk left."""
+        nonlocal rl_events, rl_streak, clean_streak
+        if rate_limited:                       # F-1 ladder (module docstring)
+            rl_events += 1
+            rl_streak += 1
+            clean_streak = 0
+            delay = RL_LADDER[min(rl_streak, len(RL_LADDER) - 1)]
+        else:
+            clean_streak += 1
+            if clean_streak >= RL_RESET_AFTER:
+                rl_streak = 0                  # reset to BATCH_DELAY pace
+            delay = BATCH_DELAY
+        time.sleep(delay)
+
     for period, tickers in sorted(buckets.items()):
         backfill = period == store_io.PERIOD_BACKFILL
         starve_into = starved.setdefault(period, [])
@@ -106,21 +136,11 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
                 res = {}
                 rate_limited = is_rate_limit(exc)   # classify BEFORE errors ride
                 errors.append(f"batch[{','.join(batch[:3])}…]: {exc}")
-            if rate_limited:                       # F-1 ladder (module docstring)
-                rl_events += 1
-                rl_streak += 1
-                clean_streak = 0
-                delay = RL_LADDER[min(rl_streak, len(RL_LADDER) - 1)]
-            else:
-                clean_streak += 1
-                if clean_streak >= RL_RESET_AFTER:
-                    rl_streak = 0                  # reset to BATCH_DELAY pace
-                delay = BATCH_DELAY
             if res:
                 absorb(batch, res, backfill=backfill, starve_into=starve_into)
             else:
                 requeue.append((batch, period))
-            time.sleep(delay)
+            pace(rate_limited)
     for period, members in sorted(starved.items()):    # F-2: starved members
         # re-queue as their OWN mini-batches — the SAME single round (§5),
         # never a second one; what survives it fileless is honest NOT_FETCHED.
@@ -130,15 +150,21 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
     if rl_events:                                  # ONE cooldown before re-queue
         time.sleep(COOLDOWN)
     for batch, period in requeue:            # ONE end-of-stage re-queue (§5)
+        rate_limited = False
         try:
             res = fetcher(batch, period)
-        except Exception:  # noqa: BLE001
+        except Exception as exc:  # noqa: BLE001
             res = {}
+            # T20: paced by the SAME helper/state as the walk — this round is
+            # the one most likely to 429, so an event here steps the ladder
+            # from the rung the walk stopped at (reporting path unchanged).
+            rate_limited = is_rate_limit(exc)
         if res:
             absorb(batch, res, backfill=period == store_io.PERIOD_BACKFILL,
                    starve_into=starved.setdefault(period, []))
         else:
             empty_note(batch)
+        pace(rate_limited)
     still = list(dict.fromkeys(                        # F-2 loud, systemd-
         t for members in starved.values() for t in members  # greppable; dedup:
         if not facts[t]["batch_completed"]))    # re-starve may repeat a member
