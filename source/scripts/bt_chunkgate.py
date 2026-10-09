@@ -10,7 +10,13 @@ Two halves of one concern — "may this chunk start, and where does it resume"
     store at >= 07:00 may start by the window rule; streams carry the
     SNAPSHOT's store_snapshot_ts regardless, so misattribution stays
     visible (the final campaign run is separately gated on a GREEN nightly
-    manifest, §6 T-BT7).
+    manifest, §6 T-BT7). Once an arm passed, the §5 LOAD HOLD: refuse
+    while load-1 > 7 — load-1 is system-wide and counts our own pool (§5
+    prices the effective ~5 cores into the window arithmetic). Checked at
+    chunk START only, mid-chunk never re-checks (chunk_state makes resume
+    cheap). BT_OVERRIDE_LOAD=1 forces through with a warn journal line —
+    the documented override, e.g. when another tenant's cron idles the
+    load while the box is actually free.
   * chunk_state.json — the completed (ticker, indicator) key set + ledger
     totals; --resume skips them. Corrupt/incompatible/foreign state REFUSES
     with the named recovery (move or delete the file), never a silent
@@ -30,6 +36,7 @@ from pathlib import Path
 import bt_snapshot                    # noqa: E402 (gate validator REUSED)
 
 GATE_HOUR_UTC = 7                    # §5: the window opens 07:00 UTC
+LOAD_LIMIT_1 = 7.0                   # §5: hold while load-1 > 7 (own pool counts)
 STATE_VERSION = 1
 
 
@@ -58,17 +65,37 @@ def courtesy() -> None:
         print(f"warn: ionice idle refused: {exc}", file=sys.stderr)
 
 
+def _load_hold() -> str:
+    """§5 load hold, checked once per chunk START (never mid-chunk): an
+    over-7 load-1 means the nightly or a sibling campaign owns the box —
+    start later, resume is cheap. Returns the journal-load string."""
+    load1 = os.getloadavg()[0]
+    if load1 > LOAD_LIMIT_1:
+        if os.environ.get("BT_OVERRIDE_LOAD") == "1":
+            print(f"warn: BT_OVERRIDE_LOAD=1 — starting chunk despite "
+                  f"load-1 {load1:.1f} > {LOAD_LIMIT_1:.0f} (§5 hold "
+                  "overridden by operator)", file=sys.stderr)
+            return f"overridden {load1:.1f}"
+        raise GateRefused(
+            [f"load-1 {load1:.1f} > {LOAD_LIMIT_1:.0f}: seat busy (nightly "
+             "or sibling campaign); retry later (BT_OVERRIDE_LOAD=1 is the "
+             "documented override)"])
+    return f"ok {load1:.1f}"
+
+
 def chunk_start_gate(snapshot_dir: Path, store_dir: Path,
                      now: datetime) -> dict:
     """(a) store reproduces the snapshot listing sha -> free to start at any
     hour; (b) clock >= 07:00 UTC -> window courtesy; else REFUSE naming both
-    clauses. bt_snapshot.validate_snapshot is THE checker (no second one)."""
+    clauses. bt_snapshot.validate_snapshot is THE checker (no second one).
+    An accepted arm still meets the §5 load hold."""
     drift = bt_snapshot.validate_snapshot(store_dir, snapshot_dir)
     if not drift:
-        return {"mode": "store-matches-snapshot"}
+        return {"mode": "store-matches-snapshot", "load": _load_hold()}
     if now >= now.replace(hour=GATE_HOUR_UTC, minute=0, second=0,
                           microsecond=0):
-        return {"mode": "courtesy-window", "drift": drift}
+        return {"mode": "courtesy-window", "drift": drift,
+                "load": _load_hold()}
     raise GateRefused([f"{r} (store drifted from snapshot)" for r in drift]
                       + [f"clock {now:%H:%M} UTC < "
                          f"{GATE_HOUR_UTC:02d}:00: the courtesy window is "

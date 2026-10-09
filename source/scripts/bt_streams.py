@@ -11,12 +11,13 @@ verbatim: the engine is not copied, edited, or re-implemented (the §5
 deepcopy-free speedup is a stated campaign-side candidate, no card's turf).
 jsonl.gz = stdlib only, the store's own csv/json+gzip idiom — no new deps.
 
-Gate + resumable chunk_state live in bt_chunkgate (one concern per file);
-the bar gate + zero-signal ledger semantics in bt_bargate. Pool capped 8
-(plan's own cap); deterministic output (sorted keys, gzip mtime=0, workers
-re-read their own frame) — only ``streams_cost.json`` (§5 per-indicator
-seconds) is non-repeatable and sits outside the manifest. Zero network:
-store_io/fixture paths only, no network client imported.
+Gate + resumable chunk_state + the §5 load-1>7 hold live in bt_chunkgate
+(one concern per file); the bar gate + zero-signal ledger semantics in
+bt_bargate. Pool capped 8 (plan's own cap); deterministic output (sorted
+keys, gzip mtime=0, workers re-read their own frame) — only
+``streams_cost.json`` (§5 per-indicator seconds) is non-repeatable and sits
+outside the manifest. Zero network: store_io/fixture paths only; no socket
+is ever used on the import chain or the run (boom-tested).
 """
 from __future__ import annotations
 

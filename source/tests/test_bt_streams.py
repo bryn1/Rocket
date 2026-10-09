@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import gzip
 import json
+import os
 import subprocess
 import sys
 from datetime import date, datetime, timedelta, timezone
@@ -42,6 +43,15 @@ RUN_ISO = "2026-10-09T00:00:00Z"
 F0300 = datetime(2026, 10, 9, 3, 0, tzinfo=timezone.utc)   # window closed
 F0701 = datetime(2026, 10, 9, 7, 1, tzinfo=timezone.utc)   # window open
 LIGHT = ["RSI", "MACD"]                # cheap registry subset for pairs
+QUIET_ENV = {**os.environ, "BT_OVERRIDE_LOAD": "1"}   # for subprocess runs
+
+
+@pytest.fixture(autouse=True)
+def quiet_load(monkeypatch):
+    """The §5 load hold reads the REAL box; a shared host must not make the
+    suite flaky. Pin load-1 to a courtesy-quiet 4.0 for all gate/build paths;
+    the load-hold tests re-patch deliberately (later setattr wins)."""
+    monkeypatch.setattr(cg.os, "getloadavg", lambda: (4.0, 4.0, 4.0, "4/8"))
 
 
 def weekdays(a: str, b: str) -> list[str]:
@@ -125,8 +135,8 @@ def test_transition_count_is_engine_edge_trigger_semantics():
 
 def test_gate_green_matching_store_at_night(tmp_path):
     store, snap = green_snapshot(tmp_path)
-    assert cg.chunk_start_gate(snap, store, F0300) == \
-        {"mode": "store-matches-snapshot"}
+    g = cg.chunk_start_gate(snap, store, F0300)
+    assert g["mode"] == "store-matches-snapshot" and g["load"].startswith("ok ")
 
 
 def test_gate_red_drift_before_window(tmp_path):
@@ -168,6 +178,52 @@ def test_gate_missing_nightly_manifest_is_not_green(tmp_path):
     assert bs.validate_snapshot(store, snap)          # drift is non-empty
     with pytest.raises(cg.GateRefused):
         cg.chunk_start_gate(snap, store, F0300)       # RED: not green + night
+
+
+# ── §5 LOAD HOLD: start-time only, > 7 refuses, 7.0 opens, env overrides ────
+
+def _load(monkeypatch, v: float) -> None:
+    monkeypatch.setattr(cg.os, "getloadavg", lambda: (v, v, v, f"{v}/8"))
+
+
+def test_load_hold_red_busy_box_refuses_named(tmp_path, monkeypatch):
+    """Planted RED: matching store + open window + load-1 7.5 -> the load
+    clause alone refuses, naming the number, the seat and the retry."""
+    store, snap = green_snapshot(tmp_path)
+    _load(monkeypatch, 7.5)
+    with pytest.raises(cg.GateRefused) as exc:
+        cg.chunk_start_gate(snap, store, F0300)
+    reasons = " ; ".join(exc.value.reasons)
+    assert "load-1 7.5 > 7" in reasons and "seat busy" in reasons
+    assert "retry later" in reasons
+    # drift+night still refuses FIRST with its own named clauses (ordering:
+    # the load check never masks the sha/window refusal)
+    p = store / "AA.csv"
+    p.write_text(p.read_text(encoding="utf-8")
+                 + "2026-10-09,1,1,1,1,1\n", encoding="utf-8")
+    with pytest.raises(cg.GateRefused) as exc2:
+        cg.chunk_start_gate(snap, store, F0300)
+    assert "load-1" not in " ; ".join(exc2.value.reasons)
+
+
+def test_load_hold_green_below_and_on_boundary(tmp_path, monkeypatch):
+    store, snap = green_snapshot(tmp_path)
+    _load(monkeypatch, 6.9)
+    g = cg.chunk_start_gate(snap, store, F0300)
+    assert g["mode"] == "store-matches-snapshot" and g["load"] == "ok 6.9"
+    _load(monkeypatch, 7.0)                 # exactly 7 is NOT > 7: opens
+    assert cg.chunk_start_gate(snap, store, F0300)["load"] == "ok 7.0"
+
+
+def test_load_hold_env_override_warns_through(tmp_path, monkeypatch, capsys):
+    """The documented escape: BT_OVERRIDE_LOAD=1 forces a busy-box start,
+    visibly — the warn journal line is the audit trail."""
+    store, snap = green_snapshot(tmp_path)
+    _load(monkeypatch, 7.5)
+    monkeypatch.setenv("BT_OVERRIDE_LOAD", "1")
+    g = cg.chunk_start_gate(snap, store, F0300)
+    assert g["mode"] == "store-matches-snapshot" and g["load"].startswith("overridden 7.5")
+    assert "BT_OVERRIDE_LOAD=1" in capsys.readouterr().err
 
 
 # ── smoke on fixture300: 2 fat + 1 THIN over the FULL 34-indicator registry ─
@@ -390,7 +446,8 @@ def test_zero_network_socket_boom(tmp_path):
                                   scripts=str(SOURCE / "scripts"),
                                   root=str(tmp_path))
     proc = subprocess.run([sys.executable, "-c", code], cwd=str(SOURCE),
-                          capture_output=True, text=True, timeout=300)
+                          capture_output=True, text=True, timeout=300,
+                          env=QUIET_ENV)     # real-box load must not flake
     assert "SOCKET-BOOM-OK" in proc.stdout, proc.stderr[-1500:]
 
 
@@ -404,7 +461,7 @@ def test_cli_green_and_refuse_exit_codes(tmp_path):
             [sys.executable, str(SOURCE / "scripts" / "bt_streams.py"),
              "--snapshot-dir", str(snap), "--store", str(store),
              "--indicators", "MACD", "--workers", "1", *extra],
-            capture_output=True, text=True, timeout=300)
+            capture_output=True, text=True, timeout=300, env=QUIET_ENV)
 
     ok = run_cli("--tickers", "AA")
     assert ok.returncode == 0 and "streams OK" in ok.stdout, ok.stderr
