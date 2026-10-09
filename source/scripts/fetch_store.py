@@ -1,9 +1,10 @@
 # reason: generator stage 1 (fetch/backfill, DESIGN §5) — extracted verbatim
 # from generate_demo_page.py at MC 10309 (the generator hit the 400-line
 # ceiling); this module owns the fetch walk only.
-"""DESIGN §5. Returns facts {ticker: {"batch_completed": bool}} for the §4
-partition. Batches = full_universe.make_batches STRIDE walk (C3-F1: never
-contiguous windows). A {} batch re-queues ONCE at end of stage; still {}
+"""DESIGN §5. Returns facts {ticker: {"batch_completed": bool, "typed":
+str|None}} for the §4 partition. Batches = full_universe.make_batches STRIDE
+walk (C3-F1: never contiguous windows). A {} batch re-queues ONCE at end of
+stage; still {}
 -> members stay batch_completed=False (loud not_fetched) + stderr
 BATCH-EMPTY-OR-DEAD (§4 #1: {} is not delisting evidence). STARVED members
 (F-2, MC 10309): batch_completed is set ONLY for members the fetcher
@@ -35,7 +36,23 @@ paces at BATCH_DELAY (all-clean bound ~1,024 x (0.5 + 3.5) = ~4,100 s),
 while a throttled call is a fast 429 raise. Honest residual: the
 all-throttled bound leaves ~500 s for ~1,024 raises (~0.5 s each), so a
 slow-raising Yahoo could cross it — the unit timeout, not this math,
-bounds that night (which lands nothing anyway)."""
+bounds that night (which lands nothing anyway).
+
+Typed seam (MC 10312, DEADLIST-DESIGN-c2 §1b — THE F-A refutation): the
+production fetch swallowed every exception, so the ladder above never fired
+live. The fetcher contract IS the production seam
+`fetcher(batch, period) -> (res, typed)` (bulk_fetcher.fetch_batch_typed by
+default); typed maps members ABSENT from res to not_found|rate_limited|
+undecidable. A typed rate_limited ANY feeds the SAME pace()/rl_events ladder
+as the exception arm — which STAYS (bulk crashes must not escape the ladder;
+one backoff owner, zero new sleeps). facts gain the additive key "typed":
+final observation wins exactly like batch_completed (the re-queue round
+overwrites the walk round; a frame in ANY res dominates -> .get reads None).
+`stats` out-param (same idiom as errors): attempted/landed/rl_events/
+typed_counts/capture — capture is bulk_fetcher's canary when the production
+seam is bound; an injected seam IS the typed channel ("ctx"). The §5 3b
+split-requeue tail keeps its fail-closed no-pacing shape: its members
+already landed, so their typed facts are None-dominated before it runs."""
 from __future__ import annotations
 
 import sys
@@ -55,16 +72,19 @@ def is_rate_limit(exc: BaseException) -> bool:
 
 
 def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
-              errors=None) -> dict:
-    facts = {t: {"batch_completed": False}
+              errors=None, stats=None) -> dict:
+    facts = {t: {"batch_completed": False, "typed": None}
              for r in plan.order for t in plan.regions.get(r, [])}
     if skip_fetch or not facts:
         return facts
     errors = errors if errors is not None else []
     import full_universe
     import store_io
+    capture = "ctx"                    # an injected seam IS the typed channel
     if fetcher is None:
-        from rocket.data.bulk_fetcher import _fetch_batch as fetcher
+        from rocket.data.bulk_fetcher import (
+            fetch_batch_typed as fetcher, typed_capture_state)
+        capture = typed_capture_state()
     from rocket.data.bulk_fetcher import BATCH_DELAY
     region_of = {t: r for r in plan.order for t in plan.regions.get(r, [])}
     today = now_fn().date()
@@ -106,6 +126,18 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
         print(f"BATCH-EMPTY-OR-DEAD batch={','.join(batch[:3])} n={len(batch)}",
               file=sys.stderr)
 
+    def observe(batch, res, typed) -> None:
+        """facts['typed'] merge (MC 10312, c2 §1b): a frame in ANY res
+        dominates with None; a typed observation overwrites the previous
+        round's (final observation wins, as batch_completed); absence without
+        a typed entry keeps what was already seen — crash arms pass {} and
+        never invent evidence."""
+        for t in batch:
+            if t in res or facts[t]["batch_completed"]:
+                facts[t]["typed"] = None
+            elif t in typed:
+                facts[t]["typed"] = typed[t]
+
     def pace(rate_limited: bool) -> None:
         """ONE pacing rule for the WHOLE stage (T20, MC 10311): the main walk
         and the end-of-stage re-queue round are one walk, so they share this
@@ -131,11 +163,16 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
         for batch in full_universe.make_batches(tickers):
             rate_limited = False
             try:
-                res = fetcher(batch, period)
+                res, typed = fetcher(batch, period)
             except Exception as exc:  # noqa: BLE001 — one batch must not kill the stage
-                res = {}
+                res, typed = {}, {}
                 rate_limited = is_rate_limit(exc)   # classify BEFORE errors ride
                 errors.append(f"batch[{','.join(batch[:3])}…]: {exc}")
+            else:
+                # T22 (MC 10312): the production 429 shape does NOT raise —
+                # typed rate_limited ANY feeds the SAME ladder (ONE owner).
+                rate_limited = any(v == "rate_limited" for v in typed.values())
+            observe(batch, res, typed)
             if res:
                 absorb(batch, res, backfill=backfill, starve_into=starve_into)
             else:
@@ -152,13 +189,16 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
     for batch, period in requeue:            # ONE end-of-stage re-queue (§5)
         rate_limited = False
         try:
-            res = fetcher(batch, period)
+            res, typed = fetcher(batch, period)
         except Exception as exc:  # noqa: BLE001
-            res = {}
+            res, typed = {}, {}
             # T20: paced by the SAME helper/state as the walk — this round is
             # the one most likely to 429, so an event here steps the ladder
             # from the rung the walk stopped at (reporting path unchanged).
             rate_limited = is_rate_limit(exc)
+        else:
+            rate_limited = any(v == "rate_limited" for v in typed.values())
+        observe(batch, res, typed)
         if res:
             absorb(batch, res, backfill=period == store_io.PERIOD_BACKFILL,
                    starve_into=starved.setdefault(period, []))
@@ -173,7 +213,7 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
     if split_requeue:                        # §5 3b: full 1y replaces the file
         for batch in full_universe.make_batches(sorted(split_requeue)):
             try:
-                res = fetcher(batch, store_io.PERIOD_BACKFILL)
+                res, _ = fetcher(batch, store_io.PERIOD_BACKFILL)
             except (Exception, SystemExit) as exc:      # T13 F7: ANY abort or
                 print(f"FAIL-CLOSED — split-requeue-fetch dog: {exc}",
                       file=sys.stderr)          # raise is systemd-greppable
@@ -182,4 +222,13 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
                 absorb(batch, res, backfill=True)
             else:
                 empty_note(batch)
+    if stats is not None:                    # out-param, idiom of `errors`
+        counts = {"not_found": 0, "rate_limited": 0, "undecidable": 0}
+        for f in facts.values():
+            if f["typed"] in counts:
+                counts[f["typed"]] += 1
+        stats.update(
+            attempted=len(facts),
+            landed=sum(1 for f in facts.values() if f["batch_completed"]),
+            rl_events=rl_events, typed_counts=counts, capture=capture)
     return facts
