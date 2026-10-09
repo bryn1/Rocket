@@ -245,9 +245,18 @@ def main() -> None:
     run_ts = now_dt.strftime("%Y-%m-%d %H:%M UTC")
 
     t = time.monotonic()
+    fetch_stats: dict = {}                   # MC 10312 typed-capture stats
     fetch_facts = fetch_store(plan, skip_fetch=args.skip_fetch,
-                              now_fn=now_fn, errors=errors)
+                              now_fn=now_fn, errors=errors,
+                              stats=fetch_stats)
     timings["fetch"] = time.monotonic() - t
+    if fetch_stats:                          # stderr journal, STARVED-style;
+        tc = fetch_stats["typed_counts"]     # zero guard/accounting change
+        print(f"TYPED-CAPTURE not_found={tc['not_found']} "
+              f"rate_limited={tc['rate_limited']} "
+              f"undecidable={tc['undecidable']} "
+              f"landed={fetch_stats['landed']}/{fetch_stats['attempted']} "
+              f"capture={fetch_stats['capture']}", file=sys.stderr)
 
     t = time.monotonic()
     scored = score_store(plan)

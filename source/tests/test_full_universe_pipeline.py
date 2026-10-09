@@ -396,8 +396,8 @@ def test_gpartition_empty_batch_after_requeue_named_and_dead_class(tmp_path,
 
     def fetcher(batch, period):              # japan batch: {} twice (dead);
         if all(t.startswith("J") for t in batch):
-            return {}                        # B: frame returned, store dies
-        return {t: _mk_frame() for t in batch}
+            return {}, {}                    # B: frame returned, store dies
+        return {t: _mk_frame() for t in batch}, {}
 
     facts = gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,
                             cache_dir=tmp_path, fetcher=fetcher)
@@ -495,3 +495,33 @@ def test_planted_red_transcript(monkeypatch, tmp_path, capsys):
     assert lines[-1].startswith("RED G6"), lines[-1]
     (out / "pipeline_reds.txt").write_text("\n".join(lines) + "\n",
                                            encoding="utf-8")
+
+
+# ── MC 10312: the TYPED-CAPTURE journal line (generate_demo_page caller) ────
+
+def test_typed_capture_journal_line_is_greppable(monkeypatch, tmp_path,
+                                                  capsys):
+    """The caller's ONE adaptation (dispatch §2): when run_fetch fills the
+    stats out-param, exactly one stderr line per fetch night, same
+    STARVED-NOT-FETCHED style — and with capture=unavailable the capture rot
+    is greppable the SAME night it happens. The fake fills stats exactly as
+    run_fetch would (out-param idiom of `errors`); a fetch_store that fills
+    NOTHING (a skip-fetch night) journals NOTHING."""
+    dtgen._wire_main(monkeypatch, tmp_path)
+
+    def fake_fetch_store(plan, **kw):
+        kw["stats"].update(attempted=10, landed=4, rl_events=7,
+                           typed_counts={"not_found": 1, "rate_limited": 2,
+                                         "undecidable": 3},
+                           capture="unavailable")
+        return _facts_done(plan)
+
+    monkeypatch.setattr(gen, "fetch_store", fake_fetch_store)
+    gen.main()
+    err = capsys.readouterr().err
+    assert ("TYPED-CAPTURE not_found=1 rate_limited=2 undecidable=3 "
+            "landed=4/10 capture=unavailable") in err
+
+    dtgen._wire_main(monkeypatch, tmp_path)       # default fake: stats unfilled
+    gen.main()
+    assert "TYPED-CAPTURE" not in capsys.readouterr().err

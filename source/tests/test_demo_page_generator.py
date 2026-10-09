@@ -107,8 +107,8 @@ def test_fetch_store_not_fetched_and_partition(tmp_path, monkeypatch, capsys):
 
     def fetcher(batch, period):       # the 6th-region stub: never returns
         if all(t.startswith("I") for t in batch):
-            return {}
-        return {t: _mk_frame() for t in batch}
+            return {}, {}             # (res, typed) — production seam shape
+        return {t: _mk_frame() for t in batch}, {}
 
     errors: list[str] = []
     facts = gen.fetch_store(plan, skip_fetch=False,
@@ -156,7 +156,7 @@ def test_split_requeue_fetch_death_is_fail_closed(tmp_path, monkeypatch,
         calls.append((tuple(batch), period))
         if batch == ["A"] and period == store_io.PERIOD_BACKFILL:
             raise RuntimeError("yf.download died mid-requeue (planted)")
-        return {t: _mk_frame() for t in batch}
+        return {t: _mk_frame() for t in batch}, {}
 
     with pytest.raises(SystemExit) as e:
         gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,

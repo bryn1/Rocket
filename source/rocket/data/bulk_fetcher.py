@@ -11,10 +11,11 @@ import argparse
 import json
 import logging
 import os
+import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import yfinance as yf
@@ -123,6 +124,94 @@ def _fetch_batch(tickers_batch: List[str], period: str) -> Dict[str, pd.DataFram
             time.sleep(2 * (attempt + 1))
 
     return {}
+
+
+# ── Typed capture seam (MC 10312, DEADLIST-DESIGN-c2 §1b) ────────────────────
+# This module is the ONLY yfinance-error reader; fetch_store's ladder is the
+# ONE backoff owner — nothing here sleeps or retries, one attempt per call.
+
+def _typed_import():
+    """Guarded import of the PRIVATE yfinance capture seam: returns
+    (_download_impl, _DownloadCtx), or None when capture is lost (a bump that
+    renames/moves them -> public fallback, design's canary). One import home
+    for both fetch_batch_typed and typed_capture_state."""
+    try:
+        from yfinance.multi import _download_impl, _DownloadCtx
+    except (ImportError, AttributeError, TypeError):
+        return None
+    return _download_impl, _DownloadCtx
+
+
+def typed_capture_state() -> str:
+    """'ctx' while the private capture seam resolves, else 'unavailable' —
+    c2 §5 canary: private-name drift must surface in the nightly journal,
+    never silently stay inert."""
+    return "ctx" if _typed_import() is not None else "unavailable"
+
+
+def _classify_typed(err: str) -> str:
+    """DEADLIST-DESIGN-c2 §1b — the ONE classification home. `err` is the
+    stored STRING, class-prefix-STRIPPED by yfinance (VERIFIED production
+    fact), so the tests are message-conjunctions; 'possibly delisted' and
+    'No data found' must BOTH be in err (DA-P2-d — a bare `and` of the two
+    tests would let either alone classify not_found). NEVER defaults to
+    not_found: fail-closed toward non-accrual."""
+    if ("YFPricesMissingError" in err or "YFTickerMissingError" in err
+            or ("possibly delisted" in err and "No data found" in err)):
+        return "not_found"
+    if ("YFRateLimitError" in err or "too many requests" in err.lower()
+            or "rate limited" in err.lower()):
+        return "rate_limited"
+    return "undecidable"
+
+
+def _frames_from(df):
+    """Frame gate for the typed seam: identical dropna/required-cols semantics
+    as legacy _fetch_batch — deliberately duplicated, because _fetch_batch is
+    pinned byte-identical (fetch_bulk's parquet contract)."""
+    results: Dict[str, pd.DataFrame] = {}
+    if df is None or df.empty:
+        return results
+    if isinstance(df.columns, pd.MultiIndex):
+        for ticker in df.columns.get_level_values(0).unique():
+            ticker_df = df[ticker].dropna()
+            required = ['Open', 'High', 'Low', 'Close', 'Volume']
+            if all(col in ticker_df.columns for col in required):
+                ticker_df = ticker_df[required].copy()
+                ticker_df.columns = ['open', 'high', 'low', 'close', 'volume']  # type: ignore
+                ticker_df.index.name = 'date'  # type: ignore
+                if len(ticker_df) > 0:
+                    results[ticker] = ticker_df
+    return results
+
+
+def fetch_batch_typed(batch: List[str],
+                      period: str) -> Tuple[Dict[str, pd.DataFrame],
+                                            Dict[str, str]]:
+    """(results, typed) per c2 §1b. Guarded private import; capture lost ->
+    public yf.download(**same kwargs) with typed={} and stderr
+    'TYPED-CAPTURE unavailable'. typed maps every REQUESTED member ABSENT
+    from results to its class (members IN results carry NO entry), classified
+    by _classify_typed on ctx.errors strings — an absent member with no
+    recorded error is 'undecidable' (silent loss is not evidence)."""
+    imp = _typed_import()
+    if imp is None:
+        print("TYPED-CAPTURE unavailable", file=sys.stderr)
+        df = yf.download(
+            tickers=batch, period=period, interval="1d", progress=False,
+            threads=True, timeout=30, group_by="ticker"
+        )
+        return _frames_from(df), {}
+    _download_impl, _DownloadCtx = imp
+    ctx = _DownloadCtx()
+    df = _download_impl(
+        ctx, batch, period=period, interval="1d", progress=False,
+        threads=True, timeout=30, group_by="ticker"
+    )
+    results = _frames_from(df)
+    typed = {t: _classify_typed(str(ctx.errors.get(t, "")))
+             for t in batch if t not in results}
+    return results, typed
 
 
 def _validate_ticker(ticker: str, period: str = "5y") -> Optional[pd.DataFrame]:
