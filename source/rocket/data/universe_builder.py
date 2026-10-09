@@ -20,6 +20,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
 
+from .universe_suffix import apply_region_suffix
+
 logger = logging.getLogger(__name__)
 
 # Cache paths
@@ -546,6 +548,15 @@ def _build_universe(force_refresh: bool = False,
         if _reg not in universe and _reg in fallback:
             universe[_reg] = list(fallback[_reg])
 
+    # --- MC 10342: region Yahoo-suffix hygiene (THE choke point) -----------
+    # Every non-US bucket now leaves the builder REGION_META-primary-suffixed
+    # (usa/international carry primary None -> pass through). The fetch path
+    # (bulk_fetcher) sends registry symbols VERBATIM to yfinance, so without
+    # this step the next genuine rebuild regenerates suffix-less uk/au/ca and
+    # wrong-suffix Swiss forms and SILENTLY REVERTS the T25 registry hygiene
+    # (761e26e). Rules + T25-form evidence: universe_suffix module docstring.
+    universe = {r: apply_region_suffix(r, v) for r, v in universe.items()}
+
     # --- Backward-compatibility: international = all non-US regions combined ---
     intl = set()
     for region_key in WIKI_PAGES:
@@ -837,7 +848,7 @@ def _build_embedded_fallback() -> dict[str, list[str]]:
 
     generated = _load_generated_region_lists()
 
-    return {
+    universe = {
         "usa": sorted(set(USA_TICKERS)),
         "uk": sorted(set(UK_TICKERS)),
         "australia": sorted(set(AUSTRALIA_TICKERS)),
@@ -849,12 +860,15 @@ def _build_embedded_fallback() -> dict[str, list[str]]:
            for reg in ("sweden", "norway", "denmark", "finland",
                        "germany", "france", "japan", "hongkong",
                        "china", "india", "korea")},
-        # international = all non-usa regions combined (backward compatible)
-        "international": sorted(set().union(
-            *(v for k, v in {
-                "uk": UK_TICKERS, "australia": AUSTRALIA_TICKERS,
-                "canada": CANADA_TICKERS, "switzerland": SWITZERLAND_TICKERS,
-                **generated,
-            }.items() if k != "usa"))
-        ),
     }
+    # MC 10342: same suffix hygiene as the scrape path — the Swiss literals
+    # above carry pre-Yahoo .SZ/.SN tails, and direct callers of this
+    # function (get_universe_count) must never see them un-suffixed.
+    universe = {r: apply_region_suffix(r, v) for r, v in universe.items()}
+    # international = all non-usa regions combined (backward compatible),
+    # DERIVED from the suffixed buckets (MC 10342): every member is
+    # resolve-shaped, so a rebuild stops contributing stale pre-suffix
+    # drop-forms to the okontrollerat pool.
+    universe["international"] = sorted(set().union(
+        *(v for k, v in universe.items() if k not in ("usa", "international"))))
+    return universe

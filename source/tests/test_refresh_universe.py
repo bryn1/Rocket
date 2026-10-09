@@ -205,7 +205,13 @@ def test_default_builder_blessed_refresh_writes_through_the_cli_only(
     assert rc == 0
     doc = json.loads(p.read_text(encoding="utf-8"))
     assert doc["timestamp"] == "2026-10-08T04:00:00+00:00"   # the CLI's write
-    assert doc["tickers"]["brazil"] == ["NEW-br-1", "NEW-br-2"]
+    # MC 10342: the builder's suffix choke point now emits resolve-shaped
+    # members even for synthetic fallback buckets (brazil primary read from
+    # REGION_META, never hardcoded here) — this test pins WRITE discipline,
+    # not ticker shape; the suffixed consequence is the point of 10342.
+    from rocket.data.universe_regions import REGION_META
+    sa = REGION_META["brazil"]["suffixes"][0]
+    assert doc["tickers"]["brazil"] == [f"NEW-br-1{sa}", f"NEW-br-2{sa}"]
     assert not list(tmp_path.glob("*.tmp"))          # atomic rename, no residue
     assert ic.read_text(encoding="utf-8") == '{"keep": "me"}'
 
