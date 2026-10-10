@@ -1,7 +1,8 @@
-"""bt_slice fold materialization (T-BT4): the §4 windows cut on the
-manifest's FROZEN cuts — boundary EXACT (C2 in trainval, C2+1 absent), no
-slice ever touches the holdout, excluded (bar-gate) tickers never
-materialize, and re-slicing is byte-identical. Refusals are always named."""
+"""bt_slice fold materialization (T-BT4, FIX cycle 1): the §4 windows cut on
+the manifest's FROZEN cuts — boundary EXACT (train = everything ≤ C1 = THE
+SELECTION ROOT; C2 in trainval, C2+1 absent), no slice ever touches the
+holdout, excluded (bar-gate) tickers never materialize, and re-slicing is
+byte-identical. Refusals are always named."""
 from __future__ import annotations
 
 import json
@@ -32,6 +33,8 @@ def slice_dates(snap: Path, fold: str, ticker: str = "AA") -> list[str]:
 
 def test_fold_keeps_windows_are_the_frozen_cut_geometry():
     cuts = {"C1": "2026-02-08", "C2": "2026-05-08", "C3": "2026-08-08"}
+    assert bt_slice.fold_keeps("train", "2026-02-08", cuts)      # C1 IN
+    assert not bt_slice.fold_keeps("train", "2026-02-09", cuts)  # C1+1 OUT
     assert bt_slice.fold_keeps("trainval", "2026-02-08", cuts)      # C1 IN
     assert bt_slice.fold_keeps("trainval", "2026-05-08", cuts)      # C2 IN
     assert not bt_slice.fold_keeps("trainval", "2026-05-09", cuts)  # C2+1 OUT
@@ -42,6 +45,24 @@ def test_fold_keeps_windows_are_the_frozen_cut_geometry():
     assert not bt_slice.fold_keeps("val2", "2026-08-09", cuts)      # HOLDOUT
     with pytest.raises(bt_slice.SliceError):
         bt_slice.fold_keeps("holdout", "2026-09-01", cuts)
+
+
+def test_train_selection_root_boundary_is_c1_exact(tmp_path):
+    """THE SELECTION ROOT (DA-P0-1): train = everything <= C1. The C1 date is
+    IN, C1+1 (= first VAL-1 bar) is ABSENT — selection can never see VAL-1."""
+    store = make_store(tmp_path, ["AA", "BB"])
+    snap = ready_snapshot(tmp_path, store, ["AA", "BB"])
+    s = bt_slice.materialize_slices(snap)
+    c1 = json.loads(bs.manifest_path(snap).read_text(encoding="utf-8")
+                    )["cuts"]["C1"]
+    ds = slice_dates(snap, "train")
+    # C1 may fall on a non-trading day — the root's max is the LAST STORED
+    # TRADING DAY <= C1 (the store holds weekdays only):
+    assert max(ds) == max(d for d in FAT_DATES if d <= c1)
+    assert not [d for d in ds if d > c1]        # first bar past C1: ABSENT
+    assert s["train"]["last_bar"] == max(d for d in FAT_DATES if d <= c1)
+    exp = sum(d <= c1 for d in FAT_DATES[bg.WARMUP_BARS:])
+    assert s["train"]["files"] == 4 and s["train"]["bars"] == 4 * exp
 
 
 def test_trainval_boundary_excludes_the_first_bar_past_c2(tmp_path):
@@ -95,7 +116,7 @@ def test_two_slice_runs_byte_identical(tmp_path):
     bt_slice.materialize_slices(snap)
     again = {str(p.relative_to(snap)): p.read_bytes()
              for p in sorted((snap / "slices").rglob("*")) if p.is_file()}
-    assert again == first and len(first) == 13          # 12 slice + manifest
+    assert again == first and len(first) == 17    # 16 slice (4 folds) + manifest
 
 
 def test_slice_refusals_are_named(tmp_path):

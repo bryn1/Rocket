@@ -3,8 +3,12 @@
 From <snapshot>/streams/ (built by bt_streams over the store) write, under
 <snapshot>/slices/:
 
-  trainval/ = bars with date <= C2 ONLY  (TRAIN + VAL-1 — the grid's SELECTION
-              root; §4: the grid gets this directory as its sole open root)
+  train/    = bars with date <= C1 ONLY  (TRAIN — the grid's SELECTION root;
+              §4: "TRAIN = everything <= C1", selection events happen here)
+  trainval/ = bars with date <= C2 ONLY  (TRAIN + VAL-1 — the grid's PHYSICAL
+              open-ceiling per §6 ("Nothing past C2 is openable"); it bounds
+              what may be OPENED and is NOT the selection root — selecting on
+              (C1,C2] would read VAL-1, DA-P0-1)
   val1/     = bars with C1 < date <= C2  (VAL-1 fold, evaluation)
   val2/     = bars with C2 < date <= C3  (VAL-2 fold, evaluation)
 
@@ -40,7 +44,7 @@ import bt_snapshot                                  # noqa: E402 (manifest seam)
 import bt_streams as st                             # noqa: E402 (_dump_lines)
 
 SLICES_DIR = "slices"
-FOLDS = ("trainval", "val1", "val2")
+FOLDS = ("train", "trainval", "val1", "val2")
 
 
 class SliceError(RuntimeError):
@@ -53,6 +57,8 @@ class SliceError(RuntimeError):
 
 def fold_keeps(fold: str, d: str, cuts: dict) -> bool:
     """Window membership on the stored naive ISO date (strings compare)."""
+    if fold == "train":
+        return d <= cuts["C1"]                  # §4: TRAIN = everything <= C1
     if fold == "trainval":
         return d <= cuts["C2"]
     if fold == "val1":

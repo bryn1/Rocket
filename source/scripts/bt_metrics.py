@@ -26,12 +26,19 @@ BARS_PER_YEAR = 252              # daily bars (§2: interval=1d)
 
 
 def panel_daily_series(days: list[str], ticker_bars: dict[str, int],
-                       trades: list[dict], side: str = "long") -> list[float]:
+                       trades: list[dict], side: str = "long",
+                       horizon: int | None = None) -> list[float]:
     """Exit-attributed panel-mean daily series over the fold's `days`.
-    trades: dicts with exit_date, side and net_pct (net of ROUNDTRIP_PCT)."""
+    trades: dicts with exit_date, side, horizon and net_pct (net of
+    ROUNDTRIP_PCT). horizon=10 IS THE §4 GATE SERIES (primary endpoint
+    pinned; h=5/20 are secondary slices and must never enter it — their
+    trades share entries and overlap, the exact condition §4 excludes);
+    horizon=None keeps the generic all-horizon series for DESCRIPTIVE use."""
     by_exit: dict[str, float] = {}
     for tr in trades:
         if tr["side"] != side:
+            continue
+        if horizon is not None and tr.get("horizon") != horizon:
             continue
         by_exit[tr["exit_date"]] = by_exit.get(tr["exit_date"], 0.0) + tr["net_pct"]
     return [by_exit.get(d, 0.0) / ticker_bars[d] if ticker_bars.get(d) else 0.0

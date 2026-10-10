@@ -1,14 +1,19 @@
-"""bt_combo (T-BT4): the pinned anti-drift PARITY test and the load-bearing
-holdout assertion, each with its planted RED. PARITY: >=3 fixture300 tickers
+"""bt_combo (T-BT4, FIX cycle 1): SELECTION runs on slices/train/ (bars ≤ C1,
+DA-P0-1) — proved by the ported POISON RED-pair: a (C1,C2] price poison in the
+trainval copies leaves the selection pass BYTE-IDENTICAL while the trainval
+ceiling root MOVES. The pinned anti-drift PARITY test and the load-bearing
+holdout assertion each ship their planted RED. PARITY: >=3 fixture300 tickers
 x >=2 indicators — grid gross == the engine's OWN emissions, captured by
 WRAPPING indicator_eval._block during an untouched _eval_indicator run over
-the FULL store frame (engine emission order). RED pair: a planted off-by-one
-entry shift breaks that same comparison; a hand-verified trade (dates+prices
-+net) pins the port literally. OPEN-EVERY-FILE (DA-P2-2): a full-span streams
-file copied into slices/trainval/ makes the grid REFUSE, naming file + bar
-date + check. Plus: sha re-assert red, singles+pairs+triples enumeration,
-pinned unanimous confluence, byte-determinism, per-fold n_trials_path
-growth."""
+the FULL store frame. RED pair: a planted off-by-one entry shift breaks that
+same comparison; a hand-verified trade (dates+prices+net) pins the port
+literally. OPEN-EVERY-FILE (DA-P2-2): a full-span streams file copied into
+slices/trainval/ makes the grid REFUSE, naming file + bar date + check.
+Plus: sha re-assert red; fail-closed stream-completeness / date-drift /
+truncated-fold REDs (DA-P1-3, DA-P2-4, DA-P2-1); the §4 GATE series is
+h=10 ONLY, pinned by exact SR-hats (MUT-3 proof); the gate series filter,
+singles+pairs+triples enumeration, pinned unanimous confluence,
+byte-determinism, and RUNNING-SUM n_trials_path (§4, re-charge accepted)."""
 from __future__ import annotations
 
 import json
@@ -28,8 +33,10 @@ for _p in (str(TESTS), str(SOURCE / "scripts")):
 
 import bt_combo as gc                               # noqa: E402
 import bt_ds                                        # noqa: E402
+import bt_metrics as bm                             # noqa: E402
 import bt_slice                                     # noqa: E402
 import bt_snapshot as bs                            # noqa: E402
+import bt_streams as st                             # noqa: E402 (_dump_lines)
 from bt_fixture_select import FIXTURE_DIR           # noqa: E402
 from bt_fold_fixtures import LIGHT, make_store, ready_snapshot   # noqa: E402
 from rocket.backtest import indicator_eval as ie    # noqa: E402
@@ -174,8 +181,9 @@ def test_open_every_file_red_full_span_into_trainval(tmp_path):
 
 def test_open_root_green_without_the_plant(tmp_path):   # GREEN pair
     store, snap = synth_ready(tmp_path)
-    doc = gc.run_pass(snap, "trainval", store, LIGHT)
-    assert doc["fold"] == "trainval" and doc["trials"]
+    doc = gc.run_pass(snap, "train", store, LIGHT)      # SELECTION root
+    assert doc["fold"] == "train" and doc["trials"]
+    assert gc.run_pass(snap, "trainval", store, LIGHT)["trials"]   # ceiling
 
 
 def test_store_sha_reasserted_every_pass(tmp_path):
@@ -205,42 +213,49 @@ def test_combo_states_is_unanimous_confluence():
 
 def test_zero_signal_levers_never_padded_into_combos(tmp_path):
     store, snap = synth_ready(tmp_path)              # §3: no padding
-    doc = gc.run_pass(snap, "trainval", store, LIGHT)
+    doc = gc.run_pass(snap, "train", store, LIGHT)   # selection root
     assert doc["levers"] == LIGHT
     assert not set(doc["levers"]) & ie.RISK_ONLY_CLASSES
     with pytest.raises(gc.GridRefused) as exc:       # dead lever: refused
-        gc.run_pass(snap, "trainval", store, ["MatchFinder"])
+        gc.run_pass(snap, "train", store, ["MatchFinder"])
     assert "not gridable" in " ; ".join(exc.value.reasons)
 
 
-# ── manifest: n_trials_path grows per fold, read-modify-write ───────────────
+# ── manifest: n_trials_path = THE RUNNING SUM (§4), read-modify-write ───────
 
 def test_n_trials_path_accumulates_per_fold(tmp_path):
+    """§4: 'the grid accumulates the running sum' — every pass (train screen,
+    val re-check, even a RETRIED pass) is one selection event charging the
+    SAME running sum; each fold's key = that sum at its latest event
+    (plan-literal, stricter branch; re-charge on retry is accepted)."""
     store, snap = synth_ready(tmp_path)
-    d1 = gc.run_pass(snap, "trainval", store, LIGHT)
-    n_combos = d1["n_combos_this_pass"]              # 2 singles + 1 pair
+    d1 = gc.run_pass(snap, "train", store, LIGHT)
+    c = d1["n_combos_this_pass"]                             # 2 singles + 1 pair
     assert (d1["n_trials_path_before"], d1["n_trials_path_after"]) == \
-        (0, {"trainval": n_combos, "val1": 0, "val2": 0})
-    d2 = gc.run_pass(snap, "trainval", store, LIGHT)             # pass ADDS
-    assert d2["n_trials_path_after"]["trainval"] == 2 * n_combos
-    d3 = gc.run_pass(snap, "val1", store, LIGHT)
-    assert d3["n_trials_path_after"] == {"trainval": 2 * n_combos,
-                                         "val1": n_combos, "val2": 0}
+        (0, {"train": c, "total": c})
+    d2 = gc.run_pass(snap, "train", store, LIGHT)           # retry: RE-CHARGES
+    assert d2["n_trials_path_after"] == {"train": 2 * c, "total": 2 * c}
+    d3 = gc.run_pass(snap, "val1", store, LIGHT)            # prices ALL events
+    assert d3["n_trials_path_after"] == {"train": 2 * c, "val1": 3 * c,
+                                         "total": 3 * c}
+    d4 = gc.run_pass(snap, "val2", store, LIGHT)
+    assert d4["n_trials_path_after"] == {"train": 2 * c, "val1": 3 * c,
+                                         "val2": 4 * c, "total": 4 * c}
     man = json.loads(bs.manifest_path(snap).read_text(encoding="utf-8"))
-    assert man["n_trials_path"] == d3["n_trials_path_after"]
+    assert man["n_trials_path"] == d4["n_trials_path_after"]
 
 
 def test_trials_json_deterministic_and_gate_shaped(tmp_path):
     store, snap = synth_ready(tmp_path)
-    gc.run_pass(snap, "trainval", store, LIGHT)
-    first = (snap / "grid" / "trainval" / "trials.json").read_bytes()
+    gc.run_pass(snap, "train", store, LIGHT)
+    first = (snap / "grid" / "train" / "trials.json").read_bytes()
     twin_store = make_store(tmp_path / "twin", ["AA", "BB", "CC"])
     twin = ready_snapshot(tmp_path / "twin", twin_store, ["AA", "BB", "CC"])
-    gc.run_pass(twin, "trainval", twin_store, LIGHT)
-    assert (twin / "grid" / "trainval" / "trials.json").read_bytes() == first
+    gc.run_pass(twin, "train", twin_store, LIGHT)
+    assert (twin / "grid" / "train" / "trials.json").read_bytes() == first
     trials = json.loads(first.decode("utf-8"))["trials"]
     for t in trials:                               # bt_ds row contract:
-        assert {"combo", "sr", "gamma3", "gamma4"} <= set(t)
+        assert {"combo", "sr", "gamma3", "gamma4", "n_days"} <= set(t)
         assert t["sr"] is None or t["evaluable"]   # dead: missing, not 0
     with pytest.raises(bt_ds.NoEdgeGuard) as exc:  # 3 combos < 30 evaluable
         bt_ds.fold_dsr_table(trials, 30, 65)       # -> honest guard, named
@@ -252,13 +267,129 @@ def test_grid_cli_refusal_and_green_exit_codes(tmp_path):
     env = {**os.environ, "BT_OVERRIDE_LOAD": "1"}
     ok = subprocess.run(
         [sys.executable, str(SOURCE / "scripts" / "bt_combo.py"),
-         "--snapshot-dir", str(snap), "--fold", "trainval",
+         "--snapshot-dir", str(snap), "--fold", "train",
          "--store", str(store), "--indicators", "RSI"],
         capture_output=True, text=True, timeout=300, env=env)
-    assert ok.returncode == 0 and "grid trainval" in ok.stdout, ok.stderr
+    assert ok.returncode == 0 and "grid train" in ok.stdout, ok.stderr
     bad = subprocess.run(
         [sys.executable, str(SOURCE / "scripts" / "bt_combo.py"),
          "--snapshot-dir", str(tmp_path / "nosnap"), "--fold", "val1",
          "--store", str(store)],
         capture_output=True, text=True, timeout=300, env=env)
     assert bad.returncode == 1 and "REFUSE" in bad.stderr
+
+
+# ── FIX CYCLE 1 ──────────────────────────────────────────────────────────────
+
+def test_gate_series_is_h10_only_exact_number_pin(tmp_path):
+    """§4 GATE series = LONG, H=10 ONLY (MUT-3 proof): on this fixture the
+    all-horizon series would read SR-hat 0.22639860997042502 — double the
+    pinned h=10 value — h=5/20 trades share entries and overlap, the exact
+    condition §4 excludes. The filter lives in panel_daily_series (one home);
+    removing it REDs this literal float."""
+    store = make_store(tmp_path, ["AA", "BB"])
+    snap = ready_snapshot(tmp_path, store, ["AA", "BB"])
+    bars = {tkr: full_span_bars(snap, tkr, "RSI") for tkr in ("AA", "BB")}
+    days_set: set[str] = set()
+    ticker_days = {tkr: set(b["dates"]) for tkr, b in bars.items()}
+    for s in ticker_days.values():
+        days_set |= s
+    days = sorted(days_set)
+    per_day = {d: sum(1 for s in ticker_days.values() if d in s) for d in days}
+    trades = [dict(t, ticker=tkr) for tkr, b in bars.items()
+              for t in gc.replay_trades(b)[0]]
+    p10 = bm.panel_daily_series(days, per_day, trades, "long", gc.PRIMARY_H)
+    pall = bm.panel_daily_series(days, per_day, trades, "long", None)
+    assert p10 != pall                              # the fork is REAL here
+    assert bt_ds.trial_statistics(p10)["sr"] == pytest.approx(
+        0.11311221503539161, abs=1e-9)              # pinned h=10-only SR-hat
+    assert bt_ds.trial_statistics(pall)["sr"] == pytest.approx(
+        0.22639860997042502, abs=1e-9)              # the fork named (never 0)
+
+
+def test_missing_stream_fails_closed_naming_the_gap(tmp_path):
+    """DA-P1-3: one missing (ticker,lever) slice — exactly a mid-chunk-state
+    resume — must REFUSE, naming the gap; it may never silently shrink the
+    grid, the sigma_hat sample or the N price."""
+    store, snap = synth_ready(tmp_path)
+    (snap / "slices" / "val1" / "CC" / "RSI.jsonl.gz").unlink()   # plant
+    with pytest.raises(gc.GridRefused) as exc:
+        gc.run_pass(snap, "val1", store)           # DEFAULT path, no --ind.
+    r = " ; ".join(exc.value.reasons)
+    assert "INCOMPLETE" in r and "CC/RSI" in r
+
+
+def test_mangled_member_dates_refused_no_zip_truncation(tmp_path):
+    """DA-P2-4: drop one bar from ONE combo member's slice — the grid must
+    REFUSE naming the member, never zip-truncate into fabricated trades."""
+    store, snap = synth_ready(tmp_path)
+    p = snap / "slices" / "train" / "AA" / "RSI.jsonl.gz"
+    head, bars = bt_slice.read_stream(p)
+    st._dump_lines(p, [head] + bars[:-1])                       # the plant
+    with pytest.raises(gc.GridRefused) as exc:
+        gc.run_pass(snap, "train", store, LIGHT)
+    r = " ; ".join(exc.value.reasons)
+    assert "date lists differ" in r and "AA" in r and "RSI" in r
+
+
+def test_truncated_val_fold_refuses_before_any_trade(tmp_path):
+    """DA-P2-1: every val1 slice one day short of the frozen fold_day_counts
+    — T would LIE — the pass REFUSES before writing trials.json."""
+    store, snap = synth_ready(tmp_path)
+    for p in sorted((snap / "slices" / "val1").glob("*/*.jsonl.gz")):
+        head, bars = bt_slice.read_stream(p)
+        st._dump_lines(p, [head] + bars[:-1])
+    with pytest.raises(gc.GridRefused) as exc:
+        gc.run_pass(snap, "val1", store, LIGHT)
+    r = " ; ".join(exc.value.reasons)
+    assert "trading days" in r and "T would lie" in r
+    assert not (snap / "grid" / "val1" / "trials.json").exists()
+
+
+def test_poison_C1_C2_leaves_selection_invariant_but_moves_ceiling(tmp_path):
+    """DA-P0-1 (ported from build-tbt4/DA-poison-reference.py): multiply the
+    prices in (C1, C2] of the trainval COPIES ONLY (massive uptrend). The
+    SELECTION pass over slices/train/ (<= C1) must be BYTE-IDENTICAL and rank
+    stable — a (C1,C2] poison cannot touch it; the trainval CEILING root's
+    own pass must MOVE (the poison is potent, so invariance is real, not an
+    inert fixture)."""
+    store, snap = synth_ready(tmp_path)
+    c1, c2 = json.loads(bs.manifest_path(snap).read_text(
+        encoding="utf-8"))["cuts"], None
+    c1, c2 = c1["C1"], c1["C2"]
+
+    def sel_bytes_and_rank():
+        doc = gc.run_pass(snap, "train", store, LIGHT)
+        blob = json.dumps(doc["trials"], sort_keys=True).encode()
+        ev = sorted((t for t in doc["trials"] if t["sr"] is not None),
+                    key=lambda t: -t["sr"])
+        return blob, [t["combo"] for t in ev]
+
+    def tv_sr():
+        return {t["combo"]: t["sr"] for t in
+                gc.run_pass(snap, "trainval", store, LIGHT)["trials"]}
+
+    base_blob, base_rank = sel_bytes_and_rank()
+    tv0 = tv_sr()
+    n_poisoned = 0
+    for tkr in ("AA", "BB"):                       # trainval copies ONLY
+        for p in sorted((snap / "slices" / "trainval" / tkr).glob(
+                "*.jsonl.gz")):
+            head, bars = bt_slice.read_stream(p)
+            k = 0
+            for b in bars:
+                if c1 < b["d"] <= c2:
+                    k += 1
+                    mult = 1.0 + 0.05 * k
+                    b["o"] = round(b["o"] * mult, 4)
+                    b["c"] = round(b["c"] * mult, 4)
+            st._dump_lines(p, [head] + bars)
+            n_poisoned += 1
+    assert n_poisoned == 4
+    after_blob, after_rank = sel_bytes_and_rank()
+    assert after_blob == base_blob                 # selection: BYTE-IDENTICAL
+    assert after_rank == base_rank                 # ranking: stable
+    tv1 = tv_sr()
+    assert any(a is not None and b is not None and abs(a - b) > 1e-9
+               for a, b in ((tv0[k], tv1[k]) for k in tv0)
+               ), "the poison must MOVE the ceiling root it was applied to"

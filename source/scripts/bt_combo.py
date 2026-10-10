@@ -1,13 +1,22 @@
 """The combo grid over ONE physical open root (T-BT4, PLAN-c3 §4).
-Reason (320 ln > 250): the verbatim trade-rule port, the physical-holdout
-open gate and the per-fold manifest write are ONE concern — PLAN §6/T-BT5
-names bt_combo.py's stream open as THE plant-red site, so it stays in one
-file; stdlib only, no new deps.
+Reason (>250 ln): the verbatim trade-rule port, the physical-holdout open
+gate and the per-fold manifest write are ONE concern — PLAN §6/T-BT5 names
+bt_combo.py's stream open as THE plant-red site, so it stays in one file;
+stdlib only, no new deps.
 
 Fold -> SOLE open root (the c3 P1-2 holdout is PHYSICAL):
-    trainval (selection) -> <snapshot>/slices/trainval/   bars <= C2 ONLY
-    val1 (eval)          -> <snapshot>/slices/val1/       C1 < d <= C2
-    val2 (eval)          -> <snapshot>/slices/val2/       C2 < d <= C3
+    train (SELECTION) -> <snapshot>/slices/train/       bars <= C1 ONLY
+    trainval (ceiling)-> <snapshot>/slices/trainval/    bars <= C2 ONLY
+    val1 (eval)       -> <snapshot>/slices/val1/        C1 < d <= C2
+    val2 (eval)       -> <snapshot>/slices/val2/        C2 < d <= C3
+
+SELECTION (grid screen, pair→shortlist cut, triple grid, C1 re-selection)
+runs on slices/train/ — §4 "TRAIN = everything <= C1" + the selection-event
+list; §6's "<= C2 SOLE open root" bounds what may be OPENED (a second line
+of defence, not the control) and never licensed selecting on VAL-1 (DA-P0-1,
+fixed: a (C1,C2] price poison leaves a train pass byte-identical — test).
+trainval remains the physical open-ceiling root; val1/val2 are evaluation
+folds, never selection inputs.
 
 At EVERY pass start, before any trade is computed:
   1. store_listing_sha256 equality re-asserted against the snapshot manifest
@@ -15,10 +24,14 @@ At EVERY pass start, before any trade is computed:
   2. the DA-P2-2 OPEN-EVERY-FILE assertion: EVERY file under the open root is
      opened and max(bar date) — over the union of opened dates, read from the
      bars themselves (a filename/`ls` reading is vacuous and BANNED here) —
-     must sit inside the fold's frozen window (trainval/val1: <= C2, the
-     literal §4 reading for the selection root; val2: <= C3, the §4 holdout
-     boundary of the window the plan itself defines for VAL-2). A full-span
-     stream file copied into a slice trips this and the pass REFUSES.
+     must sit inside the fold's frozen window (train <= C1, trainval/val1
+     <= C2, val2 <= C3). A full-span stream file copied into a slice trips
+     this and the pass REFUSES.
+  3. stream-completeness, FAIL CLOSED: every lever in streams_manifest's
+     indicators_streamed must be open for every opened ticker (DA-P1-3: a
+     mid-chunk resume state missing one (ticker,lever) would SILENTLY shrink
+     the grid, the sigma_hat sample and the N price); gaps are named.
+     Member date lists must agree per combo (no zip-truncation, DA-P2-4).
 
 Grid = singles + pairs + triples over the SIGNAL-EMITTING levers of THIS
 snapshot (streams_manifest n_signals > 0) minus the engine's RISK_ONLY_CLASSES
@@ -29,11 +42,14 @@ is pinned by tests (RESULT.md names it). The trade rule is ported VERBATIM
 from indicator_eval._eval_indicator :131-153 (edge trigger, next-OPEN entry,
 opposite-close exit else horizon end, 0.3 % roundtrip IMPORTED from the
 engine); the PINNED PARITY TEST compares the emitted round-trip gross lists,
-order-for-order, against the engine's own _eval_indicator output.
+order-for-order, against the engine's own _eval_indicator output. The §4 GATE
+series is LONG, PRIMARY H = 10 ONLY (h=5/20 stay descriptive, DA-P1-1).
 
-Per pass the manifest's n_trials_path[fold] GROWS by the candidates examined
-(read-modify-write, atomic via bt_chunkgate.save_json). n_trials_path starts
-as the T-BT2 int 0 and grows into the {fold: count} dict §4 reads per fold.
+Per pass the manifest's n_trials_path grows THE RUNNING SUM of ALL selection
+events (§4 "accumulates the running sum"): each pass is ONE selection event
+(retries re-charge — a run IS an event, §4 never deducts retroactively) and
+the fold's key holds that running sum at its latest event, NOT a per-root
+bucket (DA-P2-2 fix). Read-modify-write, atomic via bt_chunkgate.save_json.
 Zero network; engine files untouched (git diff proves source/rocket/** empty).
 """
 from __future__ import annotations
@@ -62,9 +78,10 @@ GRID_DIR = "grid"
 STREAM_SUFFIX = ".jsonl.gz"
 HORIZONS = (5, 10, 20)
 PRIMARY_H = 10
-FOLD_ROOT = {"trainval": "trainval", "val1": "val1", "val2": "val2"}
-FOLD_WINDOW = {"trainval": ("", "C2"), "val1": ("C1", "C2"),
-               "val2": ("C2", "C3")}
+FOLD_ROOT = {"train": "train", "trainval": "trainval",
+             "val1": "val1", "val2": "val2"}
+FOLD_WINDOW = {"train": ("", "C1"), "trainval": ("", "C2"),
+               "val1": ("C1", "C2"), "val2": ("C2", "C3")}
 
 
 class GridRefused(RuntimeError):
@@ -122,7 +139,13 @@ def enumerate_combos(levers: list[str]) -> list[tuple[str, ...]]:
 
 
 def combo_states(sets: list[list[str]]) -> list[str]:
-    """UNANIMOUS confluence over member state series (pinned reading)."""
+    """UNANIMOUS confluence over member state series (pinned reading).
+    FAIL CLOSED on unequal member lengths — zip() would silently truncate
+    and the grid would trade states that never coexisted on any bar (DA-P2-4)."""
+    lens = {len(s) for s in sets}
+    if len(lens) != 1:
+        raise GridRefused([f"combo members have UNEQUAL state-series lengths "
+                           f"{sorted(lens)} — fail closed, never zip-truncate"])
     out = []
     for row in zip(*sets):
         s = row[0]
@@ -176,7 +199,23 @@ def replay_trades(bars: dict, horizons: tuple[int, ...] = HORIZONS):
 
 def _levers(snapshot_dir: Path, bars: dict, want: list[str] | None) -> list[str]:
     """Signal-emitting levers present in the opened bars, risk-only removed
-    (§3: dead levers never padded into combos); streams_manifest is truth."""
+    (§3: dead levers never padded into combos); streams_manifest is truth.
+    FAIL CLOSED first (DA-P1-3): every streamed lever must be open for every
+    opened ticker — a mid-chunk-state resume missing one (ticker,lever) file
+    must REFUSE naming the gap, never silently shrink the sigma_hat sample
+    or the N price (§3 requires dead levers PRINTED, not vanished)."""
+    man = json.loads((snapshot_dir / "streams_manifest.json")
+                     .read_text(encoding="utf-8"))
+    gaps = sorted(f"{tkr}/{ind}" for tkr, inds in bars.items()
+                  for ind in man.get("indicators_streamed", [])
+                  if ind not in inds)
+    if gaps:
+        raise GridRefused([f"open root INCOMPLETE vs streams_manifest: "
+                           f"{len(gaps)} streamed (ticker,lever) stream(s) "
+                           "missing — the grid may not silently shrink; "
+                           "repair the resume and rerun:"] + gaps[:8]
+                          + ([f"(+{len(gaps) - 8} more)"]
+                             if len(gaps) > 8 else []))
     counts: dict[str, int] = {}
     for tkr, inds in bars.items():
         for ind, b in inds.items():
@@ -184,9 +223,7 @@ def _levers(snapshot_dir: Path, bars: dict, want: list[str] | None) -> list[str]
                 1 for i, s in enumerate(b["states"])
                 if s != "HOLD" and s != (b["states"][i - 1] if i else "HOLD"))
     zero = {k for k, v in counts.items() if v == 0}
-    dead = set(json.loads((snapshot_dir / "streams_manifest.json")
-                          .read_text(encoding="utf-8"))
-                 .get("zero_signal_indicators", [])) | zero
+    dead = set(man.get("zero_signal_indicators", [])) | zero
     common: set[str] = set()
     for inds in bars.values():
         common = set(inds) if not common else common & set(inds)
@@ -227,12 +264,28 @@ def run_pass(snapshot_dir: Path, fold: str, store_dir: Path,
         ticker_days[tkr] = s
         days_set |= s
     days = sorted(days_set)
+    fdc = manifest.get("cuts", {}).get("fold_day_counts", {})
+    # reconcile ONLY the folds whose stored days ARE the DSR T (VAL folds —
+    # every stream starts post-warmup, long before C1, so their windows are
+    # fully covered; train/trainval panels legitimately span fewer stream
+    # days than store days and are never priced with a T):
+    if fold in ("val1", "val2") and fold in fdc and len(days) != fdc[fold]:
+        raise GridRefused([f"{fold} open root spans {len(days)} trading days "
+                           f"but the frozen manifest says {fdc[fold]} — "
+                           "truncated/mangled slices; T would lie"])
     per_day = {d: sum(1 for s in ticker_days.values() if d in s) for d in days}
     trials = []
     for combo in combos:
         trades: list[dict] = []
         in_pos = total_bars = inc_l = inc_s = nbuy = nsell = 0
         for tkr, inds in sorted(bars.items()):
+            ref_dates = inds[combo[0]]["dates"]
+            drift = [l for l in combo[1:] if inds[l]["dates"] != ref_dates]
+            if drift:                     # fail closed (DA-P2-4): misaligned
+                raise GridRefused([f"{tkr}: combo {'+'.join(combo)} members "
+                                   f"{drift} date lists differ from "
+                                   f"{combo[0]}'s — slice mangled; never "
+                                   "combine states that never shared a bar"])
             sets = [inds[l]["states"] for l in combo]
             base = dict(inds[combo[0]])
             if len(combo) > 1:
@@ -246,7 +299,8 @@ def run_pass(snapshot_dir: Path, fold: str, store_dir: Path,
             in_pos += sum(t["exit_i"] - t["entry_i"] + 1 for t in tr
                           if t["side"] == "long" and t["horizon"] == PRIMARY_H)
             total_bars += len(base["dates"])
-        daily = bm.panel_daily_series(days, per_day, trades, "long")
+        daily = bm.panel_daily_series(days, per_day, trades, "long",
+                                      PRIMARY_H)   # §4 GATE series = h=10
         st = bt_ds.trial_statistics(daily)
         trials.append({"combo": "+".join(combo), **{k: st[k] for k in
                                                     ("sr", "sigma_nw", "gamma3",
@@ -290,10 +344,18 @@ def _fold_trials(ntp, fold: str) -> int:
 
 
 def _bump(ntp, fold: str, add: int) -> dict:
-    """int (T-BT2 init) -> per-fold dict; never decrements, never rewrites."""
-    base = dict(ntp) if isinstance(ntp, dict) else \
-        {f: 0 for f in ("trainval", "val1", "val2")}
-    base[fold] = base.get(fold, 0) + add
+    """§4: 'the grid accumulates THE RUNNING SUM' — every pass (screen, cut,
+    grid, re-check) is one selection event charging the SAME running sum
+    (a retried pass re-charges: each run IS an event, §4 never retroactively
+    deducts — the plan-literal, stricter branch; DA-P2-2). The per-fold key
+    holds the running sum AT that fold's latest event, plus a 'total' key.
+    Never decrements, never rewrites."""
+    total = (int(ntp.get("total", max(ntp.values(), default=0))
+               if isinstance(ntp, dict)
+               else int(ntp)) + add)
+    base = dict(ntp) if isinstance(ntp, dict) else {}
+    base[fold] = total
+    base["total"] = total
     return base
 
 

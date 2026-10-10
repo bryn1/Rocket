@@ -1,10 +1,14 @@
-"""bt_ds = PLAN-c3 §4 implemented exactly (T-BT4). Hand-checkable fixtures
-only; every trusted check ships the RED proof it can fail: SR*(N=30,σ̂=0.5)
-≈ 1.0366 (<1e-3), the denominator² pin 1.5, the fail-closed trio each raising
-with its named reason, the planted SR*:=0 mutation flipping a NO-EDGE fixture
-FALSE-GREEN (the mutation lives HERE as a monkeypatch, never in bt_ds), and an
-iid-noise null-sim whose both-folds pass rate is 0 at a fixed seed. Non-excess
-γ4 pinned on the hand series [1,-1,1,-1] (m4/m2² = 1, not −3)."""
+"""bt_ds = PLAN-c3 §4 implemented exactly (T-BT4, FIX cycle 1). Hand-checkable
+fixtures only; every trusted check ships the RED proof it can fail: SR*(N=30,
+σ̂=0.5) ≈ 1.0366 (<1e-3), the denominator² pin 1.5, an EXACT-number NW pin
+(T=4, L=2 = 0.9326262202, DA MUT-4 proof), the fail-closed trio each raising
+with its named reason, gate (ii) n>=400 refusing where gate (i) passed (the
+reason names gate-(i) vs gate-(ii) distinctly), the T-reconciliation (n_days
+== fold T, fail closed), the planted SR*:=0 mutation flipping a NO-EDGE
+fixture FALSE-GREEN (the mutation lives HERE as a monkeypatch, never in
+bt_ds), and an iid-noise null-sim whose both-folds pass rate is 0 at a fixed
+seed. Non-excess γ4 pinned on the hand series [1,-1,1,-1] (m4/m2² = 1,
+not −3)."""
 from __future__ import annotations
 
 import math
@@ -94,7 +98,8 @@ def test_dead_trials_missing_from_sigma_hat_never_zero():
 
 def _strong(sr: float, spread: float, n: int = 31):
     return [{"combo": f"c{i}", "sr": sr + spread * i - spread * n / 2,
-             "gamma3": 0.0, "gamma4": 3.0, "sigma_nw": 1.0} for i in range(n)]
+             "gamma3": 0.0, "gamma4": 3.0, "sigma_nw": 1.0,
+             "n_trades_long_h10": 900} for i in range(n)]   # gate (ii) ok
 
 
 def _verdict(v1, v2, n1=40, n2=40):
@@ -154,6 +159,7 @@ def test_null_sim_iid_noise_both_folds_pass_rate_zero():
                 st = bt_ds.trial_statistics([rng.gauss(0.0, 1.0)
                                              for _d in range(N_DAYS)])
                 st["combo"] = f"c{c}"
+                st["n_trades_long_h10"] = 500     # pass gate (ii): measure (i)
                 trials.append(st)
             folds.append(trials)
         v = _verdict(folds[0], folds[1], n_trials, n_trials)
@@ -163,6 +169,46 @@ def test_null_sim_iid_noise_both_folds_pass_rate_zero():
     assert both_pass == 0                            # §4(b): measured 0.000
     assert single_pass <= 3        # loose single-fold readings DO inflate —
     #                                the honest both-folds gate does not
+
+
+# ── §4(b) gate (ii): n >= 400 — a 3-trade combo must NOT reach LEADERBOARD ──
+
+def test_gate_ii_refuses_thin_combo_and_names_which_gate_refused():
+    thin = [{**t, "n_trades_long_h10": 3} for t in _strong(0.62, 0.02)]
+    v = _verdict(thin, [dict(t) for t in thin])
+    assert v["verdict"] == "NO-EDGE"              # gate (i) passed alone!
+    assert all(not c["gate_ii_pass"] for c in v["combos"])
+    best = max(v["combos"], key=lambda c: c["sr_val1"])
+    assert best["gate_i_pass"] and not best["gate_pass"]
+    assert any("gate-(ii)" in r for r in v["no_edge_reasons"]["gate"])
+    assert not any("gate-(i) refused" in r for r in v["no_edge_reasons"]["gate"])
+    weak = _strong(0.05, 0.02)                    # now gate (i) itself fails:
+    w = _verdict(weak, [dict(t) for t in weak])
+    assert w["verdict"] == "NO-EDGE"
+    assert any("gate-(i) refused" in r for r in w["no_edge_reasons"]["gate"])
+
+
+# ── §4(c) T-reconciliation: series length must equal the fold's stored T ────
+
+def test_t_reconciliation_fail_closed_on_truncated_series():
+    rows = [{**t, "n_days": 58} for t in _strong(0.62, 0.02)]   # 7 days short
+    with pytest.raises(bt_ds.DsrDomainError) as exc:
+        bt_ds.fold_dsr_table(rows, n_trials=100, t_days=N_DAYS)
+    assert "n_days=58" in str(exc.value) and f"fold T={N_DAYS}" in str(exc.value)
+    ok = [{**t, "n_days": N_DAYS} for t in _strong(0.62, 0.02)]
+    tbl = bt_ds.fold_dsr_table(ok, n_trials=100, t_days=N_DAYS)   # reconciled
+    assert len(tbl) == 31 + 1 and "_sigma_hat" in tbl
+
+
+# ── EXACT-number NW pin: DA's T=4/L=2 HAC hand sum (MUT-4 proof) ────────────
+
+def test_newey_west_exact_number_pin():
+    """Removing/altering the HAC cross terms (2.0 -> 1.0, DA MUT-4) breaks
+    this literal float — the suite no longer pins NW only by > L=0."""
+    toy = [1.0, -2.0, 3.0, 0.5]
+    assert abs(bt_ds.newey_west_sd(toy, lags=2) - 0.9326262202) < 1e-9
+    plain = (sum((x - 0.625) ** 2 for x in toy) / 4) ** 0.5     # L=0, 1/n
+    assert abs(bt_ds.newey_west_sd(toy, lags=0) - plain) < 1e-12
 
 
 # ── pooled = DESCRIPTIVE only, never a gate ─────────────────────────────────

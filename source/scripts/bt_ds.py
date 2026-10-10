@@ -19,8 +19,9 @@ ONE file so the convention cannot fork; stdlib NormalDist, no new deps.
     convention lives in this line + its test: denominator(1,0,3)^2 == 1.5).
   * T  = the fold's own stored trading days from frozen cuts.fold_day_counts
     — never a trade count, never implied.
-Gate (§4b): BOTH VAL folds independently DSR >= 0.95, with
-sign(SR-hat_V1) = sign(SR-hat_V2). Pooled-VAL DSR: DESCRIPTIVE cross-check
+Gate (§4b), BOTH clauses: (i) both VAL folds independently DSR >= 0.95 with
+sign(SR-hat_V1) = sign(SR-hat_V2); (ii) n >= 400 long h=10 trades across the
+fold set. LEADERBOARD = (i) AND (ii). Pooled-VAL DSR: DESCRIPTIVE cross-check
 only, labeled, never a gate, never averaged with a per-fold number.
 Fail-closed BEFORE computation (§4a): N < 30, evaluable SR-hats < 30, or
 sigma_hat = 0 => NoEdgeGuard naming each reason; the caller reports NO-EDGE
@@ -37,6 +38,9 @@ GAMMA_E = 0.5772156649        # Euler–Mascheroni, pinned constant
 DSR_GATE = 0.95               # α = 0.05 stated (§3 MULTIPLE-TESTING row)
 MIN_N_TRIALS = 30             # §4a fail-closed guard
 MIN_EVALUABLE = 30            # §4a fail-closed guard (separate from N)
+MIN_TRADES_GATE_II = 400      # §4b gate (ii): "n >= 400 trades" — long, h=10,
+                              # summed across the fold set (val1 + val2) as
+                              # recorded in trials.json (pinned reading)
 
 _ND = NormalDist()            # stdlib Φ / Φ⁻¹
 
@@ -155,9 +159,18 @@ def fold_guard(trials: list[dict], n_trials: int) -> list[float]:
 
 
 def fold_dsr_table(trials: list[dict], n_trials: int, t_days: int) -> dict:
-    """Per-combo DSR for one fold: guard trio first, then dsr() for every
-    evaluable trial. Returns {combo: row, "_sigma_hat": sh}."""
+    """Per-combo DSR for one fold: guard trio first, then the T-reconciliation
+    (assert trial n_days == fold T, fail closed — §4c deflates with the
+    FOLD's stored trading-day count; a truncated series must never be priced
+    at the manifest's T), then dsr() for every evaluable trial. Returns
+    {combo: row, "_sigma_hat": sh}."""
     srs = fold_guard(trials, n_trials)
+    bad = [f"{t['combo']} n_days={t['n_days']} != fold T={t_days}"
+           for t in trials
+           if t.get("n_days") is not None and t["n_days"] != t_days]
+    if bad:
+        raise DsrDomainError("series/fold-T mismatch, fail closed (§4c): "
+                             + "; ".join(bad[:8]))
     sh = sigma_hat(srs)
     out: dict = {}
     for t in trials:
@@ -173,11 +186,15 @@ def fold_dsr_table(trials: list[dict], n_trials: int, t_days: int) -> dict:
 def evaluate_both_folds(trials_v1: list[dict], trials_v2: list[dict],
                         fold_day_counts: dict,
                         n_trials_by_fold: dict) -> dict:
-    """§4(b) gate: BOTH VAL folds independently DSR >= 0.95 AND per-combo
-    sign(SR-hat_V1) = sign(SR-hat_V2). A guard raise turns the whole verdict
-    into NO-EDGE with the guard's reason returned beside it (never swallowed;
-    print it wherever NO-EDGE is printed). Pooled never appears here — see
-    pooled_descriptive()."""
+    """§4(b) gate, BOTH clauses enforced: (i) BOTH VAL folds independently
+    DSR >= 0.95 AND per-combo sign(SR-hat_V1) = sign(SR-hat_V2); (ii) n >= 400
+    long h=10 trades across the fold set (val1 + val2), read from the trials
+    rows (n_trades_long_h10) — a combo passing only (i) is NOT LEADERBOARD
+    (DA-P1-2: the verdict word must not ship on gate (i) alone). A guard raise
+    turns the whole verdict into NO-EDGE with the guard's reason returned
+    beside it (never swallowed; print it wherever NO-EDGE is printed), and a
+    no-qualifying verdict names WHICH gate refused: "gate-(i)" vs "gate-(ii)".
+    Pooled never appears here — see pooled_descriptive()."""
     tables: dict[str, dict] = {}
     no_edge_reasons: dict[str, list[str]] = {}
     for fold, trials in (("val1", trials_v1), ("val2", trials_v2)):
@@ -191,6 +208,9 @@ def evaluate_both_folds(trials_v1: list[dict], trials_v2: list[dict],
     if no_edge_reasons:
         return {"verdict": "NO-EDGE", "gate": DSR_GATE,
                 "no_edge_reasons": no_edge_reasons, "combos": []}
+    n_tr = {f: {t["combo"]: int(t.get("n_trades_long_h10", 0) or 0)
+                for t in trials} for f, trials in
+            (("val1", trials_v1), ("val2", trials_v2))}
     v1, v2 = tables["val1"], tables["val2"]
     combos = []
     for name in sorted(set(v1) & set(v2) - {"_sigma_hat"}):
@@ -198,15 +218,32 @@ def evaluate_both_folds(trials_v1: list[dict], trials_v2: list[dict],
         signs = ((a["sr"] > 0) == (b["sr"] > 0)
                  and (a["sr"] < 0) == (b["sr"] < 0)
                  and a["sr"] != 0 and b["sr"] != 0)
+        n_tot = n_tr["val1"].get(name, 0) + n_tr["val2"].get(name, 0)
+        gate_i = (a["dsr"] >= DSR_GATE and b["dsr"] >= DSR_GATE and signs)
+        gate_ii = n_tot >= MIN_TRADES_GATE_II
         combos.append({"combo": name, "dsr_val1": a["dsr"],
                        "dsr_val2": b["dsr"], "sr_val1": a["sr"],
                        "sr_val2": b["sr"], "sign_consistent": signs,
-                       "gate_pass": (a["dsr"] >= DSR_GATE
-                                     and b["dsr"] >= DSR_GATE and signs)})
+                       "n_trades_long_h10": n_tot,
+                       "gate_i_pass": gate_i, "gate_ii_pass": gate_ii,
+                       "gate_pass": gate_i and gate_ii})
     qualifying = [c["combo"] for c in combos if c["gate_pass"]]
+    if not qualifying and combos:
+        if any(c["gate_i_pass"] for c in combos):
+            fails = [f"{c['combo']} n={c['n_trades_long_h10']}"
+                     for c in combos
+                     if c["gate_i_pass"] and not c["gate_ii_pass"]]
+            no_edge_reasons["gate"] = [
+                f"gate-(ii) refused: needs n >= {MIN_TRADES_GATE_II} long "
+                f"h=10 trades across val1+val2; passing gate-(i) but short: "
+                + ", ".join(fails[:8])]
+        else:
+            no_edge_reasons["gate"] = [
+                f"gate-(i) refused: no combo reached DSR >= {DSR_GATE} on "
+                "BOTH folds independently with sign consistency"]
     return {"verdict": "LEADERBOARD" if qualifying else "NO-EDGE",
             "gate": DSR_GATE, "qualifying": qualifying, "combos": combos,
-            "no_edge_reasons": {},
+            "no_edge_reasons": no_edge_reasons,
             "sigma_hat": {"val1": v1["_sigma_hat"], "val2": v2["_sigma_hat"]},
             "n_trials_path": dict(n_trials_by_fold),
             "fold_day_counts": {k: fold_day_counts[k] for k in ("val1", "val2")}}
