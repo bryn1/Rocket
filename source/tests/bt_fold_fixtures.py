@@ -45,14 +45,15 @@ def gz_lines(path: Path) -> list[dict]:
         return [json.loads(line) for line in f]
 
 
-def ready_snapshot(tmp: Path, store: Path, tickers: list[str]) -> Path:
+def ready_snapshot(tmp: Path, store: Path, tickers: list[str],
+                   indicators: list[str] | None = None) -> Path:
     """Store -> snapshot -> streams -> slices (the full T-BT2..4 chain)."""
     import bt_slice
     import bt_snapshot as bs
     import bt_streams as st
     snap = tmp / "snap"
     bs.build_snapshot(store, snap, run_iso=RUN_ISO)
-    st.build_streams(snap, store, tickers=tickers, indicators=LIGHT,
-                     workers=1)
+    st.build_streams(snap, store, tickers=tickers,
+                     indicators=indicators or LIGHT, workers=1)
     bt_slice.materialize_slices(snap)
     return snap
