@@ -247,18 +247,136 @@ def test_accounting_closure_and_loud_class():
     assert any("partition not closed" in r for r in r_skip_bad)
 
 
-def test_region_local_today_absent_from_every_written_csv(tmp_path):
-    """G-strip generalized (pre-figuring §14 row 3): a batch of regions all
-    written at the 05:00 UTC nightly leaves NO region-local-today row."""
-    now = fx.fixed_utc(fx.today(), time(5, 0))
-    for region in ("usa", "sweden", "hongkong", "japan", "australia",
-                   "finland"):
+# ── §14 row 3 invariant, FIXED-NOW ONLY (MC 10358: wall-clock independent) ──
+NIGHTLY_REGIONS = ("usa", "sweden", "hongkong", "japan", "australia",
+                   "finland")
+_REAL_DATETIME = datetime                  # pre-monkeypatch handle (§below)
+
+
+class _WallClock:
+    """Meta-test fake of THIS module's datetime: now() answers a fixed
+    instant and COUNTS every read — a nonzero count after the invariant
+    means wall-clock dependence crept back in (MC 10358)."""
+
+    def __init__(self, instant: datetime):
+        self.instant = instant
+        self.now_calls = 0
+
+    def now(self, tz=None):
+        self.now_calls += 1
+        return self.instant if tz is None else self.instant.astimezone(tz)
+
+    def __getattr__(self, name):
+        return getattr(_REAL_DATETIME, name)
+
+
+def _write_batch(tmp_path, regions, now_fn):
+    """Six region stores, one replace-upsert each, all written under now_fn."""
+    for region in regions:
         store_io.upsert(f"B{region}", region, fx.mk_frame(6, end=fx.today()),
-                        cache_dir=tmp_path, replace=True, now_fn=now)
-        stored = store_io.read_store(f"B{region}", region, cache_dir=tmp_path)
-        local_today = datetime.now(timezone.utc).astimezone(
-            ZoneInfo(REGION_META[region]["timezone"])).date()
-        assert local_today not in dates_of(stored), region
+                        cache_dir=tmp_path, replace=True, now_fn=now_fn)
+
+
+def _assert_written_bars_match_fixed_now(tmp_path, regions, now_fn):
+    """THE real invariant behind §14 row 3, judged ONLY against the fixed
+    now — never datetime.now() (the old read of the REAL wall clock made the
+    nightly suite red 00:00-04:00 UTC, when region-local today ==
+    UTC-yesterday and that settled bar IS legitimately stored). Derived in
+    the test from REGION_META (the tz) + store_io.SESSION_CLOSE_GUARD (the
+    published guard constant), not from store_io's strip machinery:
+      (a) no written bar is dated AFTER the region-local fixed-now date;
+      (b) a region-local-today bar is present IFF that region's session
+          settled by the fixed now (local wall time >= the guard).
+    Every failure names the offending ticker, region and date."""
+    now = now_fn()
+    for region in regions:
+        ticker = f"B{region}"
+        stored = store_io.read_store(ticker, region, cache_dir=tmp_path)
+        now_local = now.astimezone(ZoneInfo(REGION_META[region]["timezone"]))
+        local_today = now_local.date()
+        settled = now_local.time() >= store_io.SESSION_CLOSE_GUARD
+        dates = dates_of(stored)
+        late = sorted(d for d in dates if d > local_today)
+        assert not late, (
+            f"{ticker} ({region}): {len(late)} bar(s) dated after "
+            f"region-local fixed-now {local_today}: {late}")
+        if settled:
+            assert local_today in dates, (
+                f"{ticker} ({region}): local {now_local:%H:%M} is past guard "
+                f"{store_io.SESSION_CLOSE_GUARD} but today-bar "
+                f"{local_today} is missing")
+        else:
+            assert local_today not in dates, (
+                f"{ticker} ({region}): UNSETTLED today-bar {local_today} "
+                f"stored while local {now_local:%H:%M} < guard "
+                f"{store_io.SESSION_CLOSE_GUARD}")
+
+
+def test_region_local_today_absent_from_every_written_csv(tmp_path):
+    """G-strip generalized (§14 row 3): a batch of regions all written at
+    the 05:00 UTC nightly leaves no unsettled today-bar and no bar past
+    region-local now. Wall-clock-independent (MC 10358) — settlement is
+    re-derived from REGION_META + the fixed now, never the real clock."""
+    now = fx.fixed_utc(fx.today(), time(5, 0))
+    _write_batch(tmp_path, NIGHTLY_REGIONS, now)
+    _assert_written_bars_match_fixed_now(tmp_path, NIGHTLY_REGIONS, now)
+
+
+def test_written_csv_invariant_green_at_faked_0030_and_0900_utc(monkeypatch,
+                                                                tmp_path):
+    """MC 10358 DoD-1: fake THIS test's wall clock to 00:30 UTC — inside the
+    old nightly red window, where usa-local-today is UTC-yesterday — and to
+    09:00 UTC, rerunning the same batch+invariant green both times. The fake
+    also counts reads: zero proves the invariant never touches the wall
+    clock, so green here cannot be a lucky-clock artifact."""
+    for at in (time(0, 30), time(9, 0)):
+        day = _REAL_DATETIME.now(timezone.utc).date()
+        wall = _WallClock(_REAL_DATETIME.combine(day, at, tzinfo=timezone.utc))
+        monkeypatch.setattr(sys.modules[__name__], "datetime", wall)
+        monkeypatch.setattr(fx, "today", lambda: day)   # fixture day = fake UTC date
+        now = fx.fixed_utc(day, time(5, 0))
+        _write_batch(tmp_path, NIGHTLY_REGIONS, now)
+        _assert_written_bars_match_fixed_now(tmp_path, NIGHTLY_REGIONS, now)
+        assert wall.now_calls == 0, f"wall clock read at fake {at}"
+
+
+def test_today_bar_present_iff_settled_by_fixed_now(tmp_path):
+    """Both halves of the IFF, DST-safe at 18:00 UTC: Stockholm 19:00/20:00
+    (>= guard -> today-bar must be PRESENT), New York 13:00/14:00 (< guard
+    -> must be absent), Sydney already on local D+1 morning (no bar dated
+    past region-local now)."""
+    now = fx.fixed_utc(fx.today(), time(18, 0))
+    regions = ("sweden", "usa", "australia")
+    _write_batch(tmp_path, regions, now)
+    _assert_written_bars_match_fixed_now(tmp_path, regions, now)
+    stored_se = store_io.read_store("Bsweden", "sweden", cache_dir=tmp_path)
+    assert fx.today() in dates_of(stored_se)            # the settled half
+
+
+def test_planted_unsettled_today_bar_goes_red(tmp_path):
+    """DoD-2 red gate (MC 10358): plant a today-bar the fixed now calls
+    UNSETTLED — persisted via a now_fn past the guard, the only public path
+    that lets one survive the strip — and the invariant must go RED naming
+    the ticker."""
+    store_io.upsert("Busa", "usa", fx.mk_frame(6, end=fx.today()),
+                    cache_dir=tmp_path, replace=True,
+                    now_fn=fx.local_evening_utc(fx.today(), "usa"))
+    with pytest.raises(AssertionError, match="Busa"):
+        _assert_written_bars_match_fixed_now(
+            tmp_path, ("usa",), fx.fixed_utc(fx.today(), time(5, 0)))
+
+
+def test_planted_future_dated_bar_goes_red(tmp_path):
+    """DoD-2 red gate, clause (a): a mid-session (13:00 UTC) upsert only
+    strips the local-today row, so a planted D+1 bar persists — the 05:00
+    UTC-fixed-now invariant must name ticker + region + date."""
+    store_io.upsert("Bsweden", "sweden",
+                    fx.mk_frame(6, end=fx.day_delta(1)),
+                    cache_dir=tmp_path, replace=True,
+                    now_fn=fx.fixed_utc(fx.today(), time(13, 0)))
+    with pytest.raises(AssertionError, match=r"Bsweden .*20\d\d-\d\d-\d\d"):
+        _assert_written_bars_match_fixed_now(
+            tmp_path, ("sweden",), fx.fixed_utc(fx.today(), time(5, 0)))
 
 
 def test_data_last_bar():
