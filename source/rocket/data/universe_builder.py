@@ -660,6 +660,11 @@ def _load_generated_region_lists() -> dict[str, list[str]]:
     DOD_SUFFIXES. This is the M4 replacement for the hardcoded sweden/thin
     __TICKERS literals (I1). The normalizer / rule table is reused, not forked
     (I2, I6). See DESIGN C1, C1b, D4; card 947.5.
+
+    MC 10718: the external /srv root is DEAD on this host (it died with
+    vm105, MC 10563) — its import is now optional; japan/korea come from
+    the IN-REPO exchange-roster source (universe_tse_krx.build_listing_regions),
+    which is host-reachable and overrides any legacy manifest forms.
     """
     import sys as _sys
     from pathlib import Path as _Path
@@ -669,50 +674,71 @@ def _load_generated_region_lists() -> dict[str, list[str]]:
 
     # ---- reuse the M3 rule table + reconcile driver, do not re-implement ----
     # (coding-discipline / reuse-research-gate STEP 0: the reconcile logic is
-    #  the sibling module reconcile_m3.py, not something to rewrite here.)
+    #  the sibling module reconcile_m3.py, not something to rewrite here.
+    #  MC 10718: the /srv root died with vm105 (MC 10563), so the import is
+    #  now OPTIONAL — on hosts without it the M4 Europe regions land EMPTY
+    #  and the refresh guard's superset/shrink rules REFUSE such a build;
+    #  this is what makes the in-repo TSE/KRX source below actually reachable.)
     _NORWAY_FILE = _DATA_DIR / "norway_raw.txt"
     if str(_DATA_DIR) not in _sys.path:
         _sys.path.insert(0, str(_DATA_DIR))
-    from reconcile_m3 import (  # noqa: E402
-        reconcile,
-        load_raw_rows,
-        _parse_nordic_lines,
-    )
+    try:
+        from reconcile_m3 import (  # noqa: E402
+            reconcile,
+            load_raw_rows,
+            _parse_nordic_lines,
+        )
+    except ModuleNotFoundError:
+        reconcile = None
+        logger.warning("reconcile_m3 absent (dead /srv root, MC 10718): M4 "
+                       "Europe regions land empty; refresh guard will refuse")
 
     lists: dict[str, list[str]] = {}
 
-    # (a) regions present in the manifest -> take already-canonical ok yahoo.
-    if _MANIFEST.exists():
-        manifest = json.loads(_MANIFEST.read_text())
-        by_region: dict[str, list[str]] = {}
-        for row in manifest:
-            if row["status"] == "ok" and row["yahoo"]:
-                by_region.setdefault(row["region"], []).append(row["yahoo"])
-        for reg, syms in by_region.items():
-            lists[reg] = sorted(set(syms))
+    if reconcile is not None:
+        # (a) regions present in the manifest -> take already-canonical yahoo.
+        if _MANIFEST.exists():
+            manifest = json.loads(_MANIFEST.read_text())
+            by_region: dict[str, list[str]] = {}
+            for row in manifest:
+                if row["status"] == "ok" and row["yahoo"]:
+                    by_region.setdefault(row["region"], []).append(row["yahoo"])
+            for reg, syms in by_region.items():
+                lists[reg] = sorted(set(syms))
 
-    # (b) M4-managed Nordic/Europe regions that M3's manifest does NOT cover.
-    #     As of this card that is only NORWAY: norway_raw.txt landed after M3's
-    #     manifest was written, so reconcile_m3.load_raw_rows() ignores it. Reuse
-    #     the SAME reconcile driver + Nordic TSV parser (nothing re-implemented).
-    managed_raw = {"sweden", "norway", "denmark", "finland", "germany", "france"}
-    raw_rows: list[tuple[str, str]] = []
-    # every managed region already streamed by reconcile_m3.load_raw_rows()
-    for sym, region in load_raw_rows():
-        if region in managed_raw:
-            raw_rows.append((sym, region))
-    # norway (absent from reconcile_m3.load_raw_rows): same TSV format
-    if _NORWAY_FILE.exists():
-        for sym in _parse_nordic_lines(_NORWAY_FILE.open()):
-            raw_rows.append((sym, "norway"))
+        # (b) M4-managed Nordic/Europe regions that M3's manifest does NOT
+        #     cover. As of card 947.5 that is only NORWAY: norway_raw.txt
+        #     landed after M3's manifest was written, so
+        #     reconcile_m3.load_raw_rows() ignores it. Reuse the SAME
+        #     reconcile driver + Nordic TSV parser (nothing re-implemented).
+        managed_raw = {"sweden", "norway", "denmark", "finland", "germany",
+                       "france"}
+        raw_rows: list[tuple[str, str]] = []
+        # every managed region already streamed by load_raw_rows()
+        for sym, region in load_raw_rows():
+            if region in managed_raw:
+                raw_rows.append((sym, region))
+        # norway (absent from reconcile_m3.load_raw_rows): same TSV format
+        if _NORWAY_FILE.exists():
+            for sym in _parse_nordic_lines(_NORWAY_FILE.open()):
+                raw_rows.append((sym, "norway"))
 
-    reconciled = reconcile(raw_rows)
-    for row in reconciled:
-        if row["status"] == "ok" and row["yahoo"] and row["region"] in managed_raw:
-            lists.setdefault(row["region"], []).append(row["yahoo"])
-    for reg in managed_raw:
-        if reg in lists:
-            lists[reg] = sorted(set(lists[reg]))
+        reconciled = reconcile(raw_rows)
+        for row in reconciled:
+            if (row["status"] == "ok" and row["yahoo"]
+                    and row["region"] in managed_raw):
+                lists.setdefault(row["region"], []).append(row["yahoo"])
+        for reg in managed_raw:
+            if reg in lists:
+                lists[reg] = sorted(set(lists[reg]))
+
+    # (c0) MC 10718: the IN-REPO TSE/KRX exchange-roster source is
+    #      AUTHORITATIVE for japan/korea. Placed AFTER (a)/(b) so a legacy
+    #      /srv manifest can never re-inject those lists — the contiguous
+    #      1000.T..1810.T sweep contamination (MC 10689) came through
+    #      exactly that path. Code-shape validation lives at THIS parser.
+    from .universe_tse_krx import build_listing_regions
+    lists.update(build_listing_regions())
 
     # (c) harden: sanitize every generated symbol against the DoD regex.
     dod_re = re.compile(r"^[A-Z0-9.\-]+\.(ST|OL|CO|HE|PA|DE|T|HK|KS|NS|BO)$")
@@ -803,7 +829,7 @@ def _build_embedded_fallback() -> dict[str, list[str]]:
     # (france list now GENERATED from france_raw.txt via normalizer — I1)
 
     # Japan (Nikkei 225 + major TSE stocks)
-    # (japan list now GENERATED from asia_raw.txt via normalizer — I1)
+    # (japan list GENERATED from the in-repo TSE roster — MC 10718)
 
     # Hong Kong (Hang Seng constituents)
     # (hongkong list now GENERATED from asia_raw.txt via normalizer — I1)
@@ -844,7 +870,7 @@ def _build_embedded_fallback() -> dict[str, list[str]]:
     ]
 
     # South Korea (KOSPI + KOSDAQ major)
-    # (korea list now GENERATED from asia_raw.txt via normalizer — I1)
+    # (korea list GENERATED from the in-repo KRX roster — MC 10718)
 
     generated = _load_generated_region_lists()
 
