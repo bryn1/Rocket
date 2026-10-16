@@ -39,6 +39,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import demo_indicators  # noqa: E402
 import demo_publish  # noqa: E402
 import demo_render  # noqa: E402
+import excluded_tickers  # noqa: E402
 from fetch_store import run_fetch as fetch_store  # stage 1; test seam name
 
 INDEX_PATH = REPO_ROOT / "index.html"
@@ -143,7 +144,7 @@ def _settled_gate_ok(data_last_bar: str, run_iso: str,
 
 def _guard(html_text: str, plan, assignments: dict, scored_by_region: dict,
            data_last_bar: str, run_iso: str, prev_green: str | None, *,
-           skip_fetch: bool = False) -> list[str]:
+           skip_fetch: bool = False, excluded: list[str] = ()) -> list[str]:
     """Fail-closed §9 checks; every reason names its subject. Any reason
     blocks EVERY write, dry-run included (F6)."""
     import full_universe
@@ -163,8 +164,17 @@ def _guard(html_text: str, plan, assignments: dict, scored_by_region: dict,
             reasons.append(f"G6 region {reg}: scorerade {s_r} av {n_r} "
                            f"(golv >= {max(1, g6_floor)})")
 
-    reasons += store_io.accounting_reasons(assignments, plan.m_unique,
-                                           skip_fetch=skip_fetch)
+    # MC 10062.139.22: tickers on the exclusion list (not_fetched 2+ nights)
+    # leave the coverage gate; first-night misses and mass failure still fail.
+    if excluded_tickers.too_many(len(excluded), plan.m_unique):
+        reasons.append(f"exkluderade {len(excluded)} > "
+                       f"{excluded_tickers.MAX_EXCLUDED_FRACTION:.1%} av "
+                       f"{plan.m_unique} (batch/fetch-fel, inte avnoteringar)")
+        excluded = ()
+    skip = set(excluded)
+    reasons += store_io.accounting_reasons(
+        {t: c for t, c in assignments.items() if t not in skip},
+        plan.m_unique - len(skip), skip_fetch=skip_fetch)
 
     bad = [m for m in _markers(plan) if m not in html_text]
     bad += [c for c in demo_publish.CONFLICT_MARKERS if c in html_text]
@@ -185,6 +195,20 @@ def _guard(html_text: str, plan, assignments: dict, scored_by_region: dict,
                        f"{prev_green or 'okänd'}; veckodagsregeln utan "
                        f"helgedagskalender slog)")
     return reasons
+
+
+def _exclusions(assignments: dict, today: str, args) -> list[str]:
+    """Update the exclusion state from tonight's not_fetched set (persisted
+    BEFORE the guard so a fail-closed night still counts; --dry-run and
+    --skip-fetch never touch it) and return the tickers excluded tonight."""
+    import store_io
+    nf = [t for t, c in assignments.items() if c == store_io.NOT_FETCHED]
+    state = excluded_tickers.load()
+    if args.dry_run or args.skip_fetch:
+        return [t for t in excluded_tickers.excluded(state) if t in set(nf)]
+    state = excluded_tickers.update(state, nf, today)
+    excluded_tickers.save(state)
+    return excluded_tickers.excluded(state)
 
 
 # ── stage 6 (delegation + manifest) ─────────────────────────────────────────
@@ -262,6 +286,7 @@ def main() -> None:
     scored = score_store(plan)
     timings["score"] = time.monotonic() - t
     assignments, data_last_bar = build_accounting(plan, scored, fetch_facts)
+    excluded = _exclusions(assignments, run_iso[:10], args)
 
     t = time.monotonic()
     live = {r: [row["ticker"] for row in rows]
@@ -276,7 +301,7 @@ def main() -> None:
 
     t = time.monotonic()
     html_text = demo_render.render(plan, scored["results"], run_ts,
-                                   data_last_bar, doc, note)
+                                   data_last_bar, doc, note, excluded=excluded)
     page_bytes = len(html_text.encode())
     rows = scored["scalars"]["scored_total"]
     print(f"PAGE-BYTES total={page_bytes} rows={rows} bytes_per_row="
@@ -289,7 +314,8 @@ def main() -> None:
     prev_green = _prev_green_bar()
     reasons = _guard(html_text, plan, assignments, scored["results"],
                      data_last_bar, run_iso, prev_green,
-                     skip_fetch=args.skip_fetch)   # ALL writes blocked (F6)
+                     skip_fetch=args.skip_fetch,
+                     excluded=excluded)   # ALL writes blocked (F6)
     timings["guard"] = time.monotonic() - t
     if reasons:
         print(f"FAIL-CLOSED — ingenting skrivet: {'; '.join(reasons)}",

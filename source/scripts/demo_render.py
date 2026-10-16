@@ -240,7 +240,8 @@ def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
 
 def render(plan, results: dict[str, list[dict]], run_ts: str,
            data_last_bar: str, indicators: dict | None = None,
-           indicators_note: str | None = None) -> str:
+           indicators_note: str | None = None,
+           excluded: list[str] = ()) -> str:
     """Full page. plan = UniversePlan (order/labels/m_unique/registry_ts);
     results = {region: [row dicts]} scored tonight; run_ts display string +
     data_last_bar drive the banner."""
@@ -297,6 +298,10 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
     dropped_note = (f' · {len(plan.dropped)} tickers utan primärregion'
                     if getattr(plan, "dropped", None) else "")
 
+    excluded_note = (f' · {len(excluded)} tickers excluded (not fetched 2+ '
+                     f'nights, e.g. {", ".join(excluded[:2])})'
+                     if excluded else "")
+
     return f"""<!DOCTYPE html>
 <html lang="sv"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -314,5 +319,5 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
 <tbody>{top_rows}</tbody></table></div>
 <h2>Universe</h2>
 {universe_lines}
-<div class="footer">Genererad {run_ts} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · Registry {plan.registry_ts}{dropped_note} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
+<div class="footer">Genererad {run_ts} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · Registry {plan.registry_ts}{dropped_note}{excluded_note} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
 </div>{JS}</body></html>"""
