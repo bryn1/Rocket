@@ -157,24 +157,28 @@ def test_cache_filename_extended_escape():
 def test_real_registry_plan_matches_design_numbers():
     """§2 digit pins on the REAL tracked cache (read-only, no network).
 
-    Re-pinned by MC 10336 (suffix hygiene): uk/australia/canada store their
-    Yahoo primary suffix (.L/.AX/.TO), switzerland carries verified .SW.
-    m_unique 12,793 -> 12,691 (junk purged, bare-collisions dropped, Swiss
-    non-resolvers dropped, cross-region dedup freed by suffixing);
-    switzerland (15) now sorts below france (32) by size; dropped 0 -> 686
-    because the international AGGREGATE still carries the pre-suffix forms —
-    inert okontrollerat (never tabbed/fetched), a known future-cleanup item
-    for universe_builder (the aggregate's owner), NOT a loader regression.
-    The old numbers pinned the suffix-LESS form — that was the bug.
+    Re-pinned by MC 10738 (registry-truth purge, owner ruling 2026-10-15
+    option 3 "delete what does not exist"): every member without a bar file
+    left the registry via `scripts/registry_purge.py`, so m_unique 12,691 ->
+    10,832 (still +832 over REGISTRY_MIN) and `okontrollerat` 686 -> 43 — the
+    international aggregate was mostly the same phantom members, and the purge
+    reached it too (filefulness is a ticker property, the store being keyed by
+    ticker alone). Tab order re-sorts by size: japan 997 -> 360 (the 811-code
+    1000.T-1810.T sweep is gone) so it drops behind hongkong and ahead of
+    norway; korea 100 -> 30 falls below france. Landed bars are untouched —
+    a purged member never had any — which is why §9 #2 goes red->green in
+    japan (355 landed vs floor 498) and korea (30 vs 50) instead of the
+    registry demanding bars that do not exist. The twelve NYSE class-share
+    members (BRK/A …) deliberately STAY; see test_registry_purge.py.
     """
     plan = fu.load_plan()
-    assert plan.m_unique == 12691
+    assert plan.m_unique == 10832
     assert list(plan.order) == ["usa", "sweden", "germany", "india",
-                                "hongkong", "japan", "uk", "norway",
-                                "finland", "australia", "denmark", "canada",
+                                "hongkong", "japan", "norway", "uk",
+                                "finland", "denmark", "australia", "canada",
                                 "korea", "france", "switzerland"]
-    assert len(plan.dropped) == 686    # international's stale pre-suffix forms
-    assert {r: len(v) for r, v in plan.regions.items()}["usa"] == 6652
+    assert len(plan.dropped) == 43     # inert international leftovers, MC 10738
+    assert {r: len(v) for r, v in plan.regions.items()}["usa"] == 6025
     stems = [fu.cache_filename(t) for r in plan.order for t in plan.regions[r]]
     assert len(set(stems)) == len(stems)
     assert all("/" not in s and "." not in s
