@@ -20,6 +20,8 @@ from typing import Dict, List, Optional, Tuple
 import pandas as pd
 import yfinance as yf
 
+from .class_share import land_results, request_batch
+
 logger = logging.getLogger(__name__)
 
 # ── Configuration ───────────────────────────────────────────────────────────
@@ -193,23 +195,27 @@ def fetch_batch_typed(batch: List[str],
     'TYPED-CAPTURE unavailable'. typed maps every REQUESTED member ABSENT
     from results to its class (members IN results carry NO entry), classified
     by _classify_typed on ctx.errors strings — an absent member with no
-    recorded error is 'undecidable' (silent loss is not evidence)."""
+    recorded error is 'undecidable' (silent loss is not evidence).
+
+    MC 10761: the REQUEST carries Yahoo's class-share form (BRK/A -> BRK-B);
+    both dicts return keyed by the REGISTRY symbol — see class_share."""
     imp = _typed_import()
+    requests, owner = request_batch(batch)
     if imp is None:
         print("TYPED-CAPTURE unavailable", file=sys.stderr)
         df = yf.download(
-            tickers=batch, period=period, interval="1d", progress=False,
+            tickers=requests, period=period, interval="1d", progress=False,
             threads=True, timeout=30, group_by="ticker"
         )
-        return _frames_from(df), {}
+        return land_results(_frames_from(df), owner), {}
     _download_impl, _DownloadCtx = imp
     ctx = _DownloadCtx()
     df = _download_impl(
-        ctx, batch, period=period, interval="1d", progress=False,
+        ctx, requests, period=period, interval="1d", progress=False,
         threads=True, timeout=30, group_by="ticker"
     )
-    results = _frames_from(df)
-    typed = {t: _classify_typed(str(ctx.errors.get(t, "")))
+    results = land_results(_frames_from(df), owner)
+    typed = {t: _classify_typed(str(ctx.errors.get(owner[t], "")))
              for t in batch if t not in results}
     return results, typed
 
