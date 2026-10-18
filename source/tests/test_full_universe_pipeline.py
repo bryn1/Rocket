@@ -226,7 +226,8 @@ def test_g4_empty_universe_aborts_naming_hard_floor(tmp_path):
         return p.read_bytes() if p.is_file() else b""
     root, dry_dir = gen.REPO_ROOT, gen.REPO_ROOT / ".tmp"
     dry_snap = lambda: {p.name: p.read_bytes()
-                        for p in sorted(dry_dir.glob("*"))}   # noqa: E731
+                        for p in sorted(dry_dir.glob("*"))
+                        if p.is_file()}   # noqa: E731 — only files carry bytes; dirs are scratch containers
     before = (snap(root / "index.html"), snap(root / "indicator_stats.json"),
               dry_snap())
     env = {**os.environ, "ROCKET_FORCE_EMPTY_UNIVERSE": "1"}
