@@ -26,6 +26,8 @@ os.chdir("/srv/svarkor/builds/rocket-stock-scanner")
 
 import yfinance as yf
 import pandas as pd
+from rocket.data.class_share import request_symbol
+from rocket.data.class_share import request_batch, land_results
 
 from telegram import Bot
 from dotenv import load_dotenv
@@ -113,15 +115,16 @@ def batch_fetch_history(tickers: list, region_map: dict) -> dict:
     chunk_size = 60
     for i in range(0, len(tickers), chunk_size):
         chunk = tickers[i:i + chunk_size]
+        requests, owner = request_batch(chunk)   # MC 10761 form, REUSED (T38)
         try:
-            df = yf.download(chunk, period="1y", interval="1d",
+            df = yf.download(requests, period="1y", interval="1d",
                              progress=False, timeout=60, group_by="ticker",
                              threads=True)
             if df is not None and not df.empty:
                 if isinstance(df.columns, pd.MultiIndex):
-                    for t in chunk:
-                        if t in df.columns.get_level_values(0):
-                            results[t] = df[t]
+                    frames = {t: df[t] for t in requests
+                              if t in df.columns.get_level_values(0)}
+                    results.update(land_results(frames, owner))
         except Exception:
             pass
     return results
@@ -154,7 +157,7 @@ def scan_single_ticker(ticker: str, df: pd.DataFrame, region: str,
         sector = "Unknown"
         market_cap = 0
         try:
-            stock = yf.Ticker(ticker)
+            stock = yf.Ticker(request_symbol(ticker))
             info = stock.info or {}
             name = info.get("shortName", "") or info.get("longName", ticker)
             sector = info.get("sector", "Unknown")

@@ -69,7 +69,8 @@ def _fetch_single_ticker(ticker: str, region: str, timeout: int = 10) -> tuple:
     Returns: (ticker, region, df_or_None, error_or_None)
     """
     try:
-        stock = yf.Ticker(ticker)
+        from rocket.data.class_share import request_symbol
+        stock = yf.Ticker(request_symbol(ticker))
         df = stock.history(period='10y', interval='1d', timeout=timeout)
         
         if df is not None and not df.empty:

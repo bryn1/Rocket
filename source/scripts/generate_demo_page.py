@@ -7,7 +7,7 @@
 """Generate the daily demo page (index.html) — generator v3 (MC 10223).
 
 Stages (DESIGN §6): 0 registry loader (full_universe; S0 floors fire BEFORE
-any network) -> 1 fetch (store_io classification + bulk_fetcher._fetch_batch
+any network) -> 1 fetch (store_io classification + bulk_fetcher.fetch_batch_typed
 through the stride planner, C3-F1; per-member completion + rate-limit
 backoff ladder live in fetch_store.py, MC 10309) -> 2 score_all Pool(8)
 + §4 partition accounting -> 3 Indikatorer weekly branch (demo_indicators)

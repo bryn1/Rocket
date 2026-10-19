@@ -19,7 +19,6 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 import yfinance as yf
-
 from .class_share import land_results, request_batch
 
 logger = logging.getLogger(__name__)
@@ -86,11 +85,14 @@ def _fetch_batch(tickers_batch: List[str], period: str) -> Dict[str, pd.DataFram
     Returns: ticker -> DataFrame for successfully fetched tickers only.
     """
     results = {}
+    # MC 10761 form, REUSED here (T38): the request carries the class-share
+    # form; frames are keyed back to the registry symbols before returning.
+    requests, owner = request_batch(tickers_batch)
 
     for attempt in range(3):
         try:
             df = yf.download(
-                tickers=tickers_batch,
+                tickers=requests,
                 period=period,
                 interval="1d",
                 progress=False,
@@ -119,7 +121,7 @@ def _fetch_batch(tickers_batch: List[str], period: str) -> Dict[str, pd.DataFram
                         if len(ticker_df) > 0:
                             results[ticker] = ticker_df
 
-            return results
+            return land_results(results, owner)
 
         except Exception:
             logger.warning(f"Batch fetch attempt {attempt+1} failed")

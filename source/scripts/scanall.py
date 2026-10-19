@@ -33,6 +33,7 @@ sys.path.insert(0, '/srv/svarkor/builds/rocket-stock-scanner')
 os.chdir('/srv/svarkor/builds/rocket-stock-scanner')
 
 import yfinance as yf
+from rocket.data.class_share import request_symbol, request_batch, land_results
 import pandas as pd
 
 from rocket.data.models import TickerInfo, Region
@@ -81,7 +82,7 @@ def _fetch_with_thread_timeout(ticker, timeout):
     error = [None]
     def _fetch():
         try:
-            stock = yf.Ticker(ticker)
+            stock = yf.Ticker(request_symbol(ticker))
             df = stock.history(period='10y', interval='1d', timeout=30)
             result[0] = df
         except Exception as e:
@@ -149,7 +150,7 @@ def scan_single_ticker(region: str, ticker: str, enable_options: bool = False):
         
         info = {}
         try:
-            stock = yf.Ticker(ticker)
+            stock = yf.Ticker(request_symbol(ticker))
             # Hard timeout for info fetch (prevents hanging forever)
             result = [None]
             def _fetch_info():
@@ -349,14 +350,15 @@ def main():
         batch_names = [t[1] for t in batch]
         
         try:
-            df = yf.download(batch_names, period='1mo', interval='1d',
+            requests, owner = request_batch(batch_names)  # MC 10761 form (T38)
+            df = yf.download(requests, period='1mo', interval='1d',
                             progress=False, timeout=30, group_by='ticker')
             
             if df is not None and not df.empty and isinstance(df.columns, pd.MultiIndex):
                 tickers_with_data = df.columns.get_level_values(0).unique()
                 ticker_set = set(tickers_with_data)
                 for region, ticker in batch:
-                    if ticker in ticker_set:
+                    if owner.get(ticker, ticker) in ticker_set:
                         live_tickers.append((region, ticker))
             
             batch_num += 1
@@ -434,7 +436,7 @@ def main():
             for ticker, signal, score, regime, buy_c, sell_c, reason in top_10:
                 # Fetch volume data from yfinance for this ticker
                 try:
-                    stock = yf.Ticker(ticker)
+                    stock = yf.Ticker(request_symbol(ticker))
                     hist = stock.history(period='3mo', interval='1d', timeout=10)
                     if hist is not None and not hist.empty and 'Volume' in hist.columns:
                         vols = hist['Volume'].dropna()

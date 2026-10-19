@@ -98,7 +98,8 @@ def _fetch_history(ticker, timeout=15):
     # Fallback to yfinance
     try:
         import yfinance as yf
-        return yf.Ticker(ticker).history(period='10y', timeout=timeout)
+        from rocket.data.class_share import request_symbol
+        return yf.Ticker(request_symbol(ticker)).history(period='10y', timeout=timeout)
     except Exception:
         return None
 
@@ -172,7 +173,8 @@ def _fetch_info(ticker, timeout=5):
     # Fallback to yfinance
     try:
         import yfinance as yf
-        info = yf.Ticker(ticker).info
+        from rocket.data.class_share import request_symbol
+        info = yf.Ticker(request_symbol(ticker)).info
         return info if isinstance(info, dict) else {}
     except Exception:
         return {}
