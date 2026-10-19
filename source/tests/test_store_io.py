@@ -249,14 +249,16 @@ def test_accounting_closure_and_loud_class():
 
 def test_region_local_today_absent_from_every_written_csv(tmp_path):
     """G-strip generalized (pre-figuring §14 row 3): a batch of regions all
-    written at the 05:00 UTC nightly leaves NO region-local-today row."""
+    written at the 05:00 UTC nightly leaves NO region-local-today row.
+    local_today comes from the SAME frozen seam as the write (not the wall
+    clock), so the claim holds at any run time (§C3-F3d, run-relative)."""
     now = fx.fixed_utc(fx.today(), time(5, 0))
     for region in ("usa", "sweden", "hongkong", "japan", "australia",
                    "finland"):
         store_io.upsert(f"B{region}", region, fx.mk_frame(6, end=fx.today()),
                         cache_dir=tmp_path, replace=True, now_fn=now)
         stored = store_io.read_store(f"B{region}", region, cache_dir=tmp_path)
-        local_today = datetime.now(timezone.utc).astimezone(
+        local_today = now().astimezone(
             ZoneInfo(REGION_META[region]["timezone"])).date()
         assert local_today not in dates_of(stored), region
 
