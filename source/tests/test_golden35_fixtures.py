@@ -13,6 +13,11 @@ only a claim about that data state while the bytes behind it are pinned too:
   mutation tests below prove that lock goes RED — so "f2c02f6 data state"
   is a checked claim, not a hope.
 
+Next-era pins follow the SAME mechanism: copy the store CSVs of the new era
+into ``tests/data/<era>/``, commit ONE SHA256SUMS manifest byte-locking them,
+and add one scoring-pair test per pinned digit — this module is the template
+(owner may opt in per era; T23 item 6).
+
 No network, no live store: nothing in this module needs source/data/raw to
 exist, and it skips on nothing.
 """

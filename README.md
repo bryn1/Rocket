@@ -58,10 +58,9 @@ on other days. It makes **no claim** of live data. The full-universe scope is th
 restored product (ruling 2026-10-07, MC 10220): the September universe coverage on today's
 layout, updated daily.
 
-> **Cutover status (2026-10-08 — delete at cutover close-out):** everything above describes the
-> product on this branch, status **TESTED** (same scoper as `docs/ARCHITECTURE.md` "Läsregel");
-> the URL above still serves the pre-cutover 35-ticker page until the first full-scale nightly
-> lands (**MC 10227**, pending).
+> **Cutover status (close-out check 2026-10-19, T23/MC 10313):** the URL above serves the
+> FULL-universe page — registry 12 122 members, 10 832 tickers scored, bar stamp 2026-10-17.
+> Cutover (MC 10227) verified; the pre-cutover note is retired.
 
 ## Nightly pipeline
 

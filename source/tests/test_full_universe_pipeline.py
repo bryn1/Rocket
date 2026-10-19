@@ -394,7 +394,7 @@ def test_gpartition_empty_batch_after_requeue_named_and_dead_class(tmp_path,
 
     monkeypatch.setattr(store_io, "upsert", upsert)
 
-    def fetcher(batch, period):              # japan batch: {} twice (dead);
+    def fetcher(batch, period, start=None):              # japan batch: {} twice (dead);
         if all(t.startswith("J") for t in batch):
             return {}                        # B: frame returned, store dies
         return {t: _mk_frame() for t in batch}

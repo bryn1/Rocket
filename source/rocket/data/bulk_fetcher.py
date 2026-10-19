@@ -77,24 +77,40 @@ def save_checkpoint(state: Dict) -> None:
 
 # ── Batch fetching ─────────────────────────────────────────────────────────
 
-def _fetch_batch(tickers_batch: List[str], period: str) -> Dict[str, pd.DataFrame]:
+def _fetch_batch(tickers_batch: List[str], period: str,
+                 start: str | None = None) -> Dict[str, pd.DataFrame]:
     """Download OHLCV for a batch of tickers in a SINGLE yf.download() call.
-    
+
+    ``start`` (ISO date) narrows the window for DELTA batches: the oldest
+    member's last bar, so no member loses continuity (T23 item 5). yfinance
+    gives ``period`` precedence, so a start-anchored delta omits period.
+
     Returns: ticker -> DataFrame for successfully fetched tickers only.
     """
     results = {}
 
     for attempt in range(3):
         try:
-            df = yf.download(
-                tickers=tickers_batch,
-                period=period,
-                interval="1d",
-                progress=False,
-                threads=True,
-                timeout=30,
-                group_by="ticker"  # easier to split by ticker
-            )
+            if start:
+                df = yf.download(
+                    tickers=tickers_batch,
+                    start=start,
+                    interval="1d",
+                    progress=False,
+                    threads=True,
+                    timeout=30,
+                    group_by="ticker"
+                )
+            else:
+                df = yf.download(
+                    tickers=tickers_batch,
+                    period=period,
+                    interval="1d",
+                    progress=False,
+                    threads=True,
+                    timeout=30,
+                    group_by="ticker"  # easier to split by ticker
+                )
 
             if df is None or df.empty:
                 logger.warning(f"Batch {tickers_batch[:3]}: empty response")

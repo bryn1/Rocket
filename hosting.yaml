@@ -12,7 +12,7 @@
     "SERVED CONTENT is the FIVE root files (mirrored to <monorepo>/apps/rocket/, hence",
     "root=apps/rocket): index.html (demo page), indicators.html (methodology), portfolio.html,",
     "region-top25.html and top25.json (frozen legacy snapshots kept live so their URLs keep",
-    "resolving). All five verified HTTP 200 at https://sibbamala.com/rocket/ on 2026-10-01.",
+    "resolving).",
     "The FULL Python scan engine (app.py, server.py, rocket/, data_fetcher/, tests/, requirements.txt, ...) lives",
     "under source/ -- versioned but NOT served, mirroring the hosting monorepo's",
     "'Files under source/ are versioned but NOT served' convention. No *.py is reachable under",

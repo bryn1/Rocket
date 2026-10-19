@@ -79,7 +79,7 @@ def test_partial_batch_starved_members_are_not_completed(tmp_path, hot_env,
     loud NOT_FETCHED (guard refuses) + STARVED-NOT-FETCHED n=2."""
     plan = _plan(["S1", "S2", "S3"])
 
-    def fetcher(batch, period):            # stubborn throttle: only S1 lands
+    def fetcher(batch, period, start=None):            # stubborn throttle: only S1 lands
         return {t: _mk_frame() for t in batch if t == "S1"}
 
     facts = gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,
@@ -103,7 +103,7 @@ def test_starved_members_rescued_by_the_single_requeue(tmp_path, hot_env,
     plan = _plan(["S1", "S2", "S3"])
     calls = []
 
-    def fetcher(batch, period):
+    def fetcher(batch, period, start=None):
         calls.append(tuple(batch))
         if len(calls) == 1:                # first pass: throttle drops 2 of 3
             return {batch[0]: _mk_frame()}
@@ -129,7 +129,7 @@ def test_re_starved_member_counted_exactly_once(tmp_path, hot_env, capsys):
     plan = _plan(["S1", "S2", "S3"])
     calls = []
 
-    def fetcher(batch, period):
+    def fetcher(batch, period, start=None):
         calls.append(tuple(batch))
         got = {t: _mk_frame() for t in batch if t in ("S1", "S2")}
         if len(calls) == 1:
@@ -168,7 +168,7 @@ def _scripted(tmp_path, sleeps, script, extra=0, n=None):
     plan = _plan(tickers)
     calls = []
 
-    def fetcher(batch, period):
+    def fetcher(batch, period, start=None):
         item = script[len(calls)] if len(calls) < len(script) else None
         calls.append(batch[0])
         if item is not None:
@@ -263,7 +263,7 @@ def test_clean_requeue_round_without_events_has_no_cooldown(tmp_path,
     plan = _plan(["TK0", "TK1", "TK2", "TK3"])
     calls = []
 
-    def fetcher(batch, period):
+    def fetcher(batch, period, start=None):
         calls.append(batch[0])
         return {} if len(calls) <= 2 else {batch[0]: _mk_frame()}
 
@@ -310,7 +310,7 @@ def test_store_death_after_frame_is_dead_at_fetch_not_starved(tmp_path,
     plan = _plan(["OK", "BAD"])
     errors: list[str] = []
     facts = gen.fetch_store(plan, skip_fetch=False, now_fn=lambda: NOW,
-                            cache_dir=tmp_path, fetcher=lambda b, p:
+                            cache_dir=tmp_path, fetcher=lambda b, p, start=None:
                             {t: _mk_frame() for t in b}, errors=errors)
     assert facts["BAD"]["batch_completed"] is True     # frame WAS returned
     assert not (tmp_path / "BAD.csv").exists()
@@ -319,3 +319,38 @@ def test_store_death_after_frame_is_dead_at_fetch_not_starved(tmp_path,
     assert assignments["BAD"] == store_io.DEAD_AT_FETCH
     err = capsys.readouterr().err
     assert "STARVED" not in err
+
+
+# ── T23 item 5: DELTA batches start at the oldest member's last bar ─────────
+
+def test_delta_batches_start_at_oldest_member_last_bar(tmp_path, hot_env):
+    """RED-UNDER-PRE-FIX: the old call site passed only (batch, period), so
+    every delta re-fetched the fixed 1mo window. T23 item 5: a delta batch
+    now carries start= the OLDEST member's last bar (continuity floor, less
+    payload); backfill batches keep period=1y with start None."""
+    import pandas as pd
+
+    def _frame(end_day: int):
+        end = NOW.date() - timedelta(days=end_day)
+        dates = pd.date_range(end=pd.Timestamp(end), periods=8, freq="D")
+        return pd.DataFrame({"date": dates, "open": [10.0] * 8,
+                             "high": [10.1] * 8, "low": [9.9] * 8,
+                             "close": [10.0] * 8, "volume": [1e6] * 8})
+
+    store_io.upsert("D5", "usa", _frame(5), cache_dir=tmp_path, replace=True,
+                    now_fn=lambda: NOW)
+    store_io.upsert("D2", "usa", _frame(2), cache_dir=tmp_path, replace=True,
+                    now_fn=lambda: NOW)
+    seen: list[tuple[str, "str | None"]] = []
+
+    def fetcher(batch, period, start=None):
+        seen.append((period, start))
+        return {t: _mk_frame(3) for t in batch}
+
+    gen.fetch_store(_plan(["D5", "D2", "N1"]), skip_fetch=False,
+                    now_fn=lambda: NOW, cache_dir=tmp_path, fetcher=fetcher)
+    oldest = (NOW.date() - timedelta(days=5)).isoformat()
+    delta = [s for p, s in seen if p == store_io.PERIOD_DELTA]
+    backfill = [s for p, s in seen if p == store_io.PERIOD_BACKFILL]
+    assert delta and all(s == oldest for s in delta)   # oldest floor, shared
+    assert backfill and all(s is None for s in backfill)

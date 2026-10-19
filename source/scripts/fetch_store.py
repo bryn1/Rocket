@@ -69,9 +69,12 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
     region_of = {t: r for r in plan.order for t in plan.regions.get(r, [])}
     today = now_fn().date()
     buckets: dict[str, list[str]] = {}
+    last_of: dict[str, str] = {}
     for t, r in region_of.items():
-        period, _, _ = store_io.classify(t, r, today, cache_dir=cache_dir)
+        period, last, _ = store_io.classify(t, r, today, cache_dir=cache_dir)
         buckets.setdefault(period, []).append(t)
+        if last:
+            last_of[t] = last                 # delta continuity anchor (T23-5)
     requeue: list[tuple[list[str], str]] = []
     split_requeue: list[str] = []
     # F-2: members whose frame was absent from a NON-empty batch, per period.
@@ -125,13 +128,20 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
             delay = BATCH_DELAY
         time.sleep(delay)
 
+    def delta_start(batch) -> str | None:
+        """T23 item 5: a DELTA batch starts at the OLDEST member's last bar
+        (start=last_bar, min of ISO strings) instead of the fixed 1mo window;
+        backfill batches keep period=1y (start None)."""
+        olds = [last_of[t] for t in batch if last_of.get(t)]
+        return min(olds) if olds else None
+
     for period, tickers in sorted(buckets.items()):
         backfill = period == store_io.PERIOD_BACKFILL
         starve_into = starved.setdefault(period, [])
         for batch in full_universe.make_batches(tickers):
             rate_limited = False
             try:
-                res = fetcher(batch, period)
+                res = fetcher(batch, period, delta_start(batch))
             except Exception as exc:  # noqa: BLE001 — one batch must not kill the stage
                 res = {}
                 rate_limited = is_rate_limit(exc)   # classify BEFORE errors ride
@@ -152,7 +162,7 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
     for batch, period in requeue:            # ONE end-of-stage re-queue (§5)
         rate_limited = False
         try:
-            res = fetcher(batch, period)
+            res = fetcher(batch, period, delta_start(batch))
         except Exception as exc:  # noqa: BLE001
             res = {}
             # T20: paced by the SAME helper/state as the walk — this round is
@@ -173,7 +183,7 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
     if split_requeue:                        # §5 3b: full 1y replaces the file
         for batch in full_universe.make_batches(sorted(split_requeue)):
             try:
-                res = fetcher(batch, store_io.PERIOD_BACKFILL)
+                res = fetcher(batch, store_io.PERIOD_BACKFILL, None)
             except (Exception, SystemExit) as exc:      # T13 F7: ANY abort or
                 print(f"FAIL-CLOSED — split-requeue-fetch dog: {exc}",
                       file=sys.stderr)          # raise is systemd-greppable

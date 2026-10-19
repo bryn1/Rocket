@@ -1,5 +1,8 @@
 """Rocket Stock Scanner — Main Dash Application."""
 
+# CEILING REASON (T23-2, MC 10313): 849 ln > 600 — debt predates MC 10220 (814 ln at
+# f2c02f6); kept as one file so the Dash callback registration list stays single-source.
+
 import os
 import sys
 import logging

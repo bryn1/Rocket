@@ -105,7 +105,7 @@ def test_fetch_store_not_fetched_and_partition(tmp_path, monkeypatch, capsys):
         store_io.upsert(t, "usa", _mk_frame(), cache_dir=tmp_path,
                         replace=True, now_fn=lambda: NOW)
 
-    def fetcher(batch, period):       # the 6th-region stub: never returns
+    def fetcher(batch, period, start=None):       # the 6th-region stub: never returns
         if all(t.startswith("I") for t in batch):
             return {}
         return {t: _mk_frame() for t in batch}
@@ -152,7 +152,7 @@ def test_split_requeue_fetch_death_is_fail_closed(tmp_path, monkeypatch,
 
     calls = []
 
-    def fetcher(batch, period):
+    def fetcher(batch, period, start=None):
         calls.append((tuple(batch), period))
         if batch == ["A"] and period == store_io.PERIOD_BACKFILL:
             raise RuntimeError("yf.download died mid-requeue (planted)")

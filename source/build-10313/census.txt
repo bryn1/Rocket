@@ -1,0 +1,7 @@
+dead_code (T23 re-census, branch mc10220-fulluniverse): roots=18 live files, reached=45 py files
+ORPHAN-MODULE rocket/daily_scan_cron.py  no live code reaches it
+ORPHAN-MODULE rocket/daily_scoring.py  no live code reaches it
+ORPHAN-MODULE rocket/generate_daily_signals.py  no live code reaches it
+ORPHAN-MODULE rocket/nightly_scan.py  no live code reaches it
+ORPHAN-MODULE rocket/portfolio_check_cron.py  no live code reaches it
+REACHED scripts/fetch_history.py  

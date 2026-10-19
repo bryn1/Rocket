@@ -181,11 +181,12 @@ garantier mot återfall (§2-golven). Resten av den gamla visionen förblir bort
 10-år historik (storen håller ~1 år), Telegram-dagsrecs, options-/social-scaling, autotrading.
 `universe_builder.py` lever vidare **bakom** `refresh_universe`-garden (aldrig nattligen).
 Telegram-ärans död kod (`scanall.py`, `scan_batch.py`, `split_universe.py`,
-`aggregate_results.py`, `night_scan.sh`, `daily_push.py`, `daily_scoring.py` m.fl.) är
-overkoplade och ägs av ett separat hygien-kort — de tas inte bort här.
+`aggregate_results.py`, `night_scan.sh`, `daily_push.py`) ligger över — ingen enhet kör dem.
+Hygienkortet T23 (MC 10313) togs 2026-10-19 sex överkopplade moduler och deras fyra
+systemd-enheter bort (census: `source/build-10313/census.txt`).
 
 ---
 
-*Uppdaterad: 2026-10-07 (MC 10220 docs truth pass, MC 10225). Sanning prövas mot trädet: om
+*Uppdaterad: 2026-10-19 (MC 10313 T23 hygiene; tidigare 2026-10-07 MC 10220 docs truth pass, MC 10225). Sanning prövas mot trädet: om
 en uppräkning i denna fil motsägs av koden, är dokumentet fel — fixa dokumentet, inte
 sanningen.*
