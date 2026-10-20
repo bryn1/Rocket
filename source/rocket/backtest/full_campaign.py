@@ -213,8 +213,12 @@ def run_campaign(cache_dir: Path, *, top_n: int = TOP_N) -> dict:
                                     "no market-impact term"},
         "bh_q": BH_Q, "leaderboard": [{"rank": i + 1, "indicator": n, **e["summary"]}
                                       for i, (n, e) in enumerate(ranked)],
-        "holdout": {n: ho["indicators"].get(n, {}).get("long", {}) for n in
-                    [x for x, _ in ranked[:top_n]]},
+        # seam block nests the horizon grid: horizons -> "10" -> long (§4 primary
+        # horizon, LONG side — the same cell rank_combinations reads).
+        "holdout": {n: {**ho["indicators"].get(n, {}).get("horizons", {})
+                            .get("10", {}).get("long", {}),
+                        "evidence_t": ho["indicators"].get(n, {}).get("evidence_t")}
+                    for n in [x for x, _ in ranked[:top_n]]},
         "holdout_window": [str(wins[N_FOLDS][0]), str(wins[N_FOLDS][1])],
     }
     return doc
