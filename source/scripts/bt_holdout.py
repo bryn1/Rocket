@@ -34,7 +34,7 @@ replay from the holdout span alone (stated: no state crosses C3) for the
 member indicators of the opened combos only; n_trials_path is UNCHANGED —
 the holdout is no selection event (§4). Zero network.
 
-SIZE: 366 ln — over the ~250 target by design: ONE ceremony, ONE module (the
+SIZE: 370 ln — over the ~250 target by design: ONE ceremony, ONE module (the
 repo's hard ceiling is 400; the pre-write refusals, materialize, open-every-
 file re-read and the marker share one snapshot state and stay legible in one
 file). churn_slice.py stays 250 ln.
