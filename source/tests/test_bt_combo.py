@@ -393,3 +393,51 @@ def test_poison_C1_C2_leaves_selection_invariant_but_moves_ceiling(tmp_path):
     assert any(a is not None and b is not None and abs(a - b) > 1e-9
                for a, b in ((tv0[k], tv1[k]) for k in tv0)
                ), "the poison must MOVE the ceiling root it was applied to"
+
+
+# ── --snapshot-attested (MC 10390 owner ruling 2026-10-20 16:59Z, Option A) ──
+
+def test_attested_pass_survives_store_drift_and_names_ruling(tmp_path):
+    """The ratified clause: on THIS pinned snapshot the streams_manifest +
+    slice attestation replaces the live-scan sha EQUALITY — but ONLY under
+    the explicit flag; the drifted store still REFUSES the default path."""
+    store, snap = synth_ready(tmp_path)
+    p = store / "AA.csv"                             # nightly-style growth
+    p.write_text(p.read_text(encoding="utf-8")
+                 + "2026-10-09,1,1,1,1,1\n", encoding="utf-8")
+    with pytest.raises(gc.GridRefused) as exc:       # STRICT default bites
+        gc.run_pass(snap, "val1", store, LIGHT)
+    assert "store listing sha" in " ; ".join(exc.value.reasons)
+    doc = gc.run_pass(snap, "val1", store, LIGHT, snapshot_attested=True)
+    assert doc["attestation"].startswith("ATTESTED")
+    assert "MC 10390" in doc["attestation"]
+    assert "Option A" in doc["attestation"]
+    man = json.loads(bs.manifest_path(snap).read_text(encoding="utf-8"))
+    assert man["run_iso"] in doc["attestation"]      # ruling names the shas
+    assert man["store_listing_sha256"] in doc["attestation"]
+    assert doc["trials"]                             # the grid actually ran
+
+
+def test_attestation_refused_when_streams_manifest_disagrees(tmp_path):
+    """(i) fail-closed BOTH-named: a tampered streams_manifest ts/sha refuses
+    naming the key and both sides — the pin DA-c2 demanded, in force."""
+    store, snap = synth_ready(tmp_path)
+    smp = snap / "streams_manifest.json"
+    sm = json.loads(smp.read_text(encoding="utf-8"))
+    sm["store_snapshot_ts"]["store_listing_sha256"] = "deadbeef"
+    smp.write_text(json.dumps(sm), encoding="utf-8")
+    with pytest.raises(gc.GridRefused) as exc:
+        gc.run_pass(snap, "val1", store, LIGHT, snapshot_attested=True)
+    reasons = " ; ".join(exc.value.reasons)
+    assert "streams_manifest.store_snapshot_ts.store_listing_sha256" in reasons
+    assert "deadbeef" in reasons                     # names both sides
+    assert not (snap / "grid" / "val1" / "trials.json").exists()
+
+
+def test_attestation_refused_when_fold_slices_absent(tmp_path):
+    """(ii): attestation without the fold's slice root refuses, naming it."""
+    store, snap = synth_ready(tmp_path)
+    shutil.rmtree(snap / "slices" / "val1")
+    with pytest.raises(gc.GridRefused) as exc:
+        gc.run_pass(snap, "val1", store, LIGHT, snapshot_attested=True)
+    assert "val1" in " ; ".join(exc.value.reasons)

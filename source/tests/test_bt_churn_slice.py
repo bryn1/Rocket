@@ -172,3 +172,21 @@ def test_cli_green_and_refusal_exit_codes(tmp_path):
          "--snapshot-dir", str(tmp_path / "nosnap"), "--store", str(store)],
         capture_output=True, text=True, timeout=300)
     assert bad.returncode == 1 and "REFUSE" in bad.stderr
+
+
+# ── --snapshot-attested (MC 10390 owner ruling 2026-10-20 16:59Z, Option A) ──
+
+def test_attested_churn_survives_store_drift(tmp_path):
+    """Mirror of the grid clause: the scan still counts the universe, it
+    only stops GATING; the strict default keeps refusing the drift."""
+    store, snap = ready_grid(tmp_path)
+    p = store / "AA.csv"                             # nightly-style growth
+    p.write_text(p.read_text(encoding="utf-8")
+                 + "2026-10-09,1,1,1,1,1\n", encoding="utf-8")
+    with pytest.raises(cs.ChurnRefused):             # STRICT default bites
+        cs.run_churn(snap, store, "val2")
+    doc = cs.run_churn(snap, store, "val2", snapshot_attested=True)
+    assert doc["attestation"].startswith("ATTESTED") and "MC 10390" in \
+        doc["attestation"]
+    assert doc["combos"] and not scan_vocab(
+        json.dumps(doc["combos"]))                   # descriptive holds

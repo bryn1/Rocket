@@ -15,6 +15,9 @@ marker clause precedes the purge: a spent root is never deleted). Two
 POST-MATERIALIZE clauses — the open-every-file > C3 re-check and the day
 count — raise AFTER the root is written, but still before the marker and
 the artifact: a refused ceremony never spends the span and re-runs clean.
+--snapshot-attested (MC 10390 owner ruling 2026-10-20 16:59Z, Option A) swaps
+clause (iv) for bt_combo.attest_store (same gate bt_combo passes); the STRICT
+scan stays the DEFAULT — the flag is an explicit per-invocation opt-in.
 
 Combos open from --combos (the frozen doc's ratified id-list, order kept;
 ids the ranking fold's grid doc never ran REFUSE, naming them) or, by
@@ -224,11 +227,15 @@ def descriptive_rows(opened: dict, ranked: list[dict]) -> list[dict]:
 
 def open_holdout(snapshot_dir: Path, store_dir: Path, doc_path: Path,
                  top_k: int = MAX_TOP_K, fold: str = "val2",
-                 combos: list[str] | None = None) -> dict:
+                 combos: list[str] | None = None,
+                 snapshot_attested: bool = False) -> dict:
     """Run the ceremony; returns the written artifact. The pre-write clauses
     refuse before the first write; the open-every-file re-check and the day
     count refuse AFTER materializing but still before marker and artifact —
-    a failed ceremony is re-runnable, a completed one never is."""
+    a failed ceremony is re-runnable, a completed one never is.
+    snapshot_attested=True swaps the scan-store sha-equality clause for
+    bt_combo.attest_store (MC 10390 owner ruling 2026-10-20 16:59Z, the
+    same gate bt_combo passes); STRICT scan stays the DEFAULT."""
     snapshot_dir = Path(snapshot_dir)
     mpath = bt_snapshot.manifest_path(snapshot_dir)
     if not 1 <= top_k <= MAX_TOP_K:
@@ -253,13 +260,20 @@ def open_holdout(snapshot_dir: Path, store_dir: Path, doc_path: Path,
         raise HoldoutRefused([f"leaderboard doc is ZERO bytes: {doc_path} — "
                               "an empty file freezes nothing; a touch may "
                               "not spend the one-shot span (PLAN-c3 §4)"])
-    listing, _dates = bt_snapshot.scan_store(Path(store_dir))
-    derived_sha = bt_snapshot.listing_sha256(listing)
     snap_sha = manifest["store_listing_sha256"]
-    if derived_sha != snap_sha:
-        raise HoldoutRefused([f"store listing sha {derived_sha} != the "
-                              f"snapshot's {snap_sha} — the holdout would "
-                              "be attributed to a drifted store"])
+    attestation = None
+    if snapshot_attested:
+        # ruling-mirrored clause: attest_store verifies the streams_manifest
+        # ts/sha pair + fold slices IN LIEU of the scan equality (the live
+        # store is never scanned on this path — MC 10390 ruling 16:59Z).
+        attestation = grid.attest_store(snapshot_dir, fold, manifest)
+    else:
+        derived_sha = bt_snapshot.listing_sha256(
+            bt_snapshot.scan_store(Path(store_dir))[0])
+        if derived_sha != snap_sha:
+            raise HoldoutRefused([f"store listing sha {derived_sha} != the "
+                                  f"snapshot's {snap_sha} — the holdout would "
+                                  "be attributed to a drifted store"])
     tpath, trows = _fold_rows(snapshot_dir, fold, snap_sha)
     if combos:
         names = list(dict.fromkeys(combos))
@@ -316,6 +330,7 @@ def open_holdout(snapshot_dir: Path, store_dir: Path, doc_path: Path,
     artifact = {"descriptive_only": True,
                 "store_snapshot_ts": {"run_iso": manifest["run_iso"],
                                       "store_listing_sha256": snap_sha},
+                "attestation": attestation,
                 "cuts": cuts,
                 "ranking_source": {"fold": fold, "mode": mode,
                                    "path": str(tpath.relative_to(
@@ -344,17 +359,24 @@ def main(argv: list[str] | None = None) -> int:
                     help="comma list of combo ids to open — the frozen "
                     "doc's ratified set, order kept (default: gate-aware "
                     "top-K; the ids must exist in --fold's trials.json)")
+    ap.add_argument("--snapshot-attested", action="store_true",
+                    help="MC 10390 owner ruling 2026-10-20 16:59Z (Option "
+                    "A): attest via bt_combo.attest_store instead of the "
+                    "live-scan sha equality. STRICT scan stays the DEFAULT")
     args = ap.parse_args(argv)
     cg.courtesy()
     try:
         doc = open_holdout(args.snapshot_dir, args.store, args.doc,
                            args.top, args.fold,
                            [c.strip() for c in args.combos.split(",")
-                            if c.strip()] or None)
+                            if c.strip()] or None,
+                           args.snapshot_attested)
     except (HoldoutRefused, grid.GridRefused, bt_slice.SliceError) as exc:
         print(f"REFUSE — {'; '.join(getattr(exc, 'reasons', [str(exc)]))}",
               file=sys.stderr)
         return 1
+    if doc.get("attestation"):
+        print(doc["attestation"])
     print(f"holdout opened once: {doc['slice_files']} files (bars > "
           f"{doc['cuts']['C3']}), {len(doc['combos'])} combos -> "
           f"{HOLDOUT_METRICS} (descriptive_only, snapshot ts)")

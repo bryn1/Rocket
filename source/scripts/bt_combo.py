@@ -21,6 +21,10 @@ folds, never selection inputs.
 At EVERY pass start, before any trade is computed:
   1. store_listing_sha256 equality re-asserted against the snapshot manifest
      (bt_snapshot.scan_store + listing_sha256 REUSED — same store, same sha);
+     --snapshot-attested (MC 10390 owner ruling 2026-10-20 16:59Z, Option A)
+     EXPLICITLY opts this one clause out into attest_store's streams_manifest
+     + slice verification — the STRICT scan stays the DEFAULT and the flag
+     never silently weakens anything (mirrored in bt_holdout/churn_slice);
   2. the DA-P2-2 OPEN-EVERY-FILE assertion: EVERY file under the open root is
      opened and max(bar date) — over the union of opened dates, read from the
      bars themselves (a filename/`ls` reading is vacuous and BANNED here) —
@@ -237,20 +241,70 @@ def _levers(snapshot_dir: Path, bars: dict, want: list[str] | None) -> list[str]
     return levers
 
 
+ATTESTATION_RULING = "MC 10390 owner ruling 2026-10-20 16:59Z (Option A)"
+
+
+def attest_store(snapshot_dir: Path, fold: str, manifest: dict) -> str:
+    """--snapshot-attested: the owner-ratified attestation replacing the
+    live-scan sha EQUALITY for the PINNED snapshot (the live store moves
+    nightly while every slice bytes the frozen window; the sha gate is
+    attribution-only — bt_combo.py:250-253 reading, ruling rationale).
+    Verifies (i) streams_manifest.store_snapshot_ts carries the snapshot
+    manifest's run_iso AND store_listing_sha256 (BOTH named on either side
+    of every comparison, fail closed) and (ii) the fold's slice root holds
+    slice files. Returns the ATTESTED line naming the ruling + the manifest
+    shas; callers print it. STRICT scan stays the DEFAULT — this runs ONLY
+    under the explicit flag; bt_holdout/churn_slice mirror it (same gate)."""
+    reasons = []
+    sm_path = snapshot_dir / "streams_manifest.json"
+    if not sm_path.exists():
+        reasons.append(f"no streams_manifest at {sm_path} — nothing attests")
+    else:
+        ts = json.loads(sm_path.read_text(encoding="utf-8")).get(
+            "store_snapshot_ts", {})
+        for key in ("run_iso", "store_listing_sha256"):
+            got, want = ts.get(key), manifest.get(key)
+            if got != want:
+                reasons.append(
+                    f"streams_manifest.store_snapshot_ts.{key}={got!r} != "
+                    f"snapshot manifest {key}={want!r}")
+    root = snapshot_dir / bt_slice.SLICES_DIR / FOLD_ROOT.get(fold, fold)
+    if not any(root.glob("*/*.jsonl.gz")):
+        reasons.append(f"no slice files for fold {fold!r} at {root}")
+    if reasons:
+        raise GridRefused([f"ATTESTATION REFUSED ({ATTESTATION_RULING} path "
+                           "— strict scan remains the default without the "
+                           "flag):"] + reasons)
+    return (f"ATTESTED — {ATTESTATION_RULING}: streams_manifest."
+            f"store_snapshot_ts run_iso={manifest['run_iso']} + "
+            f"store_listing_sha256={manifest['store_listing_sha256']} == the "
+            f"snapshot manifest (both named); slices present for fold "
+            f"{fold} at {root}")
+
+
 def run_pass(snapshot_dir: Path, fold: str, store_dir: Path,
-             indicators: list[str] | None = None) -> dict:
+             indicators: list[str] | None = None,
+             snapshot_attested: bool = False) -> dict:
     """One grid pass over the fold's sole root; writes grid/<fold>/
     trials.json + grows the manifest's n_trials_path[fold]. Refuses naming
-    every reason BEFORE opening the grid (sha drift, window trip)."""
+    every reason BEFORE opening the grid (sha drift, window trip).
+    snapshot_attested=True swaps clause 1 for attest_store — explicit
+    opt-in only (MC 10390 ruling); the strict scan is the DEFAULT."""
     snapshot_dir = Path(snapshot_dir)
     mpath = bt_snapshot.manifest_path(snapshot_dir)
     if not mpath.exists():
         raise GridRefused([f"no campaign snapshot manifest at {mpath}"])
     manifest = json.loads(mpath.read_text(encoding="utf-8"))
-    listing, _dates = bt_snapshot.scan_store(Path(store_dir))
-    if bt_snapshot.listing_sha256(listing) != manifest["store_listing_sha256"]:
-        raise GridRefused(["store listing sha != the snapshot's — this pass "
-                           "would attribute results to the wrong store"])
+    attestation = None
+    if snapshot_attested:
+        attestation = attest_store(snapshot_dir, fold, manifest)
+    else:
+        listing, _dates = bt_snapshot.scan_store(Path(store_dir))
+        if bt_snapshot.listing_sha256(listing) != \
+                manifest["store_listing_sha256"]:
+            raise GridRefused(["store listing sha != the snapshot's — this "
+                               "pass would attribute results to the wrong "
+                               "store"])
     bars = open_root(snapshot_dir, fold)
     levers = _levers(snapshot_dir, bars, indicators)
     if not levers:
@@ -322,6 +376,7 @@ def run_pass(snapshot_dir: Path, fold: str, store_dir: Path,
     doc = {"store_snapshot_ts": {"run_iso": manifest["run_iso"],
                                  "store_listing_sha256":
                                      manifest["store_listing_sha256"]},
+           "attestation": attestation,
            "fold": fold, "cuts": manifest["cuts"],
            "levers": levers, "n_combos_this_pass": len(combos),
            "n_trials_path_before": n_before,
@@ -366,16 +421,23 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--store", default=str(CACHE_DIR), type=Path)
     ap.add_argument("--indicators", default="",
                     help="restrict grid to these levers (default: all)")
+    ap.add_argument("--snapshot-attested", action="store_true",
+                    help=f"{ATTESTATION_RULING}: replace the live-scan sha "
+                    "equality with the streams_manifest + slice attestation "
+                    "(attest_store). STRICT scan stays the DEFAULT — the "
+                    "strict gate still runs WITHOUT this flag")
     args = ap.parse_args(argv)
     cg.courtesy()
     try:
         doc = run_pass(args.snapshot_dir, args.fold, args.store,
                        [i for i in args.indicators.split(",") if i.strip()]
-                       or None)
+                       or None, args.snapshot_attested)
     except (GridRefused, bt_slice.SliceError) as exc:
         print(f"REFUSE — {'; '.join(getattr(exc, 'reasons', [str(exc)]))}",
               file=sys.stderr)
         return 1
+    if doc.get("attestation"):
+        print(doc["attestation"])
     print(f"grid {doc['fold']}: {doc['n_combos_this_pass']} combos over "
           f"{len(doc['levers'])} levers -> trials.json; n_trials_path "
           f"{doc['n_trials_path_before']} -> {doc['n_trials_path_after']}")

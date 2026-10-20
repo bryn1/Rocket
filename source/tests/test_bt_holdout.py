@@ -228,3 +228,35 @@ def test_cli_green_then_refusal_exit_codes(tmp_path):
     bad = run_cli(snap, store, doc, "--top", "11", "--combos", "MACD")
     assert bad.returncode == 1 and "REFUSE" in bad.stderr
     assert "top-K = 11" in bad.stderr                   # K named on stderr too
+
+
+# ── --snapshot-attested (MC 10390 owner ruling 2026-10-20 16:59Z, Option A) ──
+
+def test_attested_ceremony_survives_store_drift(tmp_path):
+    """The mirrored clause: the drifted store still REFUSES the strict
+    default; the flag swaps ONLY the scan-equality for attest_store."""
+    store, snap = ready_grid(tmp_path)
+    p = store / "AA.csv"                             # nightly-style growth
+    p.write_text(p.read_text(encoding="utf-8")
+                 + "2026-10-09,1,1,1,1,1\n", encoding="utf-8")
+    with pytest.raises(bh.HoldoutRefused):           # STRICT default bites
+        bh.open_holdout(snap, store, frozen_doc(tmp_path), 10, "val2",
+                        ["MACD", "RSI"])
+    art = bh.open_holdout(snap, store, frozen_doc(tmp_path), 10, "val2",
+                          ["MACD", "RSI"], snapshot_attested=True)
+    assert art["attestation"].startswith("ATTESTED") and "MC 10390" in \
+        art["attestation"]
+    assert art["combos"] and not scan_vocab(json.dumps(art["combos"]))
+
+
+def test_attested_ceremony_refused_on_streams_manifest_disagreement(tmp_path):
+    store, snap = ready_grid(tmp_path)
+    smp = snap / "streams_manifest.json"
+    sm = json.loads(smp.read_text(encoding="utf-8"))
+    sm["store_snapshot_ts"]["run_iso"] = "1999-01-01T00:00:00Z"
+    smp.write_text(json.dumps(sm), encoding="utf-8")
+    with pytest.raises(gc.GridRefused) as exc:       # attest_store's own type
+        bh.open_holdout(snap, store, frozen_doc(tmp_path), 10, "val2",
+                        ["MACD", "RSI"], snapshot_attested=True)
+    assert "run_iso" in " ; ".join(exc.value.reasons)
+    assert not manifest_of(snap).get("holdout_opened")   # span unspent

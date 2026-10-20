@@ -21,8 +21,11 @@ class is still printed, empty.
 Machinery is the grid's, imported never re-implemented: bt_combo.open_root
 (open-every-file + frozen window), replay_trades + combo_states, PRIMARY_H,
 bt_snapshot.scan_store + listing_sha256 (sha re-asserted every run, like
-every grid pass). Per (combo, class): ticker counts, trades, in-position
-fraction and trades/ticker/year (bm.metrics_block arithmetic, its
+every grid pass) — or, under the explicit --snapshot-attested flag (MC 10390
+owner ruling 2026-10-20 16:59Z, Option A), the same bt_combo.attest_store
+verification the grid uses; the STRICT scan stays the DEFAULT.
+Per (combo, class): ticker counts, trades, in-position fraction and
+trades/ticker/year (bm.metrics_block arithmetic, its
 BARS_PER_YEAR imported); per-class means are computed only for their SIGN.
 Read-only w.r.t. store + snapshot; writes only churn/<fold>/. Zero network.
 """
@@ -166,20 +169,31 @@ def combo_churn(opened: dict, combo: tuple[str, ...],
 
 def run_churn(snapshot_dir: Path, store_dir: Path, fold: str,
               combos: list[str] | None = None, top: int = 0,
-              members: set[str] | None = None) -> dict:
+              members: set[str] | None = None,
+              snapshot_attested: bool = False) -> dict:
     """One descriptive pass; writes churn/<fold>/churn_slice.json (re-runnable
-    — no one-shot marker here, it opens nothing that cannot be re-read)."""
+    — no one-shot marker here, it opens nothing that cannot be re-read).
+    snapshot_attested=True replaces the scan-equality clause with
+    bt_combo.attest_store (MC 10390 owner ruling 2026-10-20 16:59Z; same
+    gate). The scan still runs for the descriptive universe counts — it just
+    never gates on this path; STRICT scan stays the DEFAULT."""
     snapshot_dir = Path(snapshot_dir)
     mpath = bt_snapshot.manifest_path(snapshot_dir)
     if not mpath.exists():
         raise ChurnRefused([f"no campaign snapshot manifest at {mpath}"])
     manifest = json.loads(mpath.read_text(encoding="utf-8"))
     listing, _d = bt_snapshot.scan_store(Path(store_dir))
-    derived = bt_snapshot.listing_sha256(listing)
-    if derived != manifest["store_listing_sha256"]:
-        raise ChurnRefused([f"store listing sha {derived} != the snapshot's "
-                            f"{manifest['store_listing_sha256']} — this slice "
-                            "would attribute results to the wrong store"])
+    attestation = None
+    if snapshot_attested:
+        attestation = grid.attest_store(snapshot_dir, fold, manifest)
+    else:
+        derived = bt_snapshot.listing_sha256(listing)
+        if derived != manifest["store_listing_sha256"]:
+            raise ChurnRefused([f"store listing sha {derived} != the "
+                                f"snapshot's "
+                                f"{manifest['store_listing_sha256']} — this "
+                                "slice would attribute results to the "
+                                "wrong store"])
     tpath = snapshot_dir / grid.GRID_DIR / fold / "trials.json"
     if not tpath.exists():
         raise ChurnRefused([f"no grid doc at {tpath} — run bt_combo.py "
@@ -205,6 +219,7 @@ def run_churn(snapshot_dir: Path, store_dir: Path, fold: str,
         "store_snapshot_ts": {"run_iso": manifest["run_iso"],
                               "store_listing_sha256":
                                   manifest["store_listing_sha256"]},
+        "attestation": attestation,
         "registry_ts": manifest.get("registry_ts"),
         "membership_reading": MEMBERSHIP_READING,
         "fold": fold, "cuts": manifest["cuts"],
@@ -229,16 +244,22 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--top", default=0, type=int,
                     help="rank the pass by SR-hat and slice only these (0: "
                          "all; T-BT7 will pass the doc's list via --combos)")
+    ap.add_argument("--snapshot-attested", action="store_true",
+                    help="MC 10390 owner ruling 2026-10-20 16:59Z (Option "
+                    "A): attest via bt_combo.attest_store instead of gating "
+                    "the live-scan sha equality. STRICT scan stays DEFAULT")
     args = ap.parse_args(argv)
     cg.courtesy()
     try:
         doc = run_churn(args.snapshot_dir, args.store, args.fold,
                         [c for c in args.combos.split(",") if c.strip()]
-                        or None, args.top)
+                        or None, args.top, None, args.snapshot_attested)
     except (ChurnRefused, grid.GridRefused) as exc:
         print(f"REFUSE — {'; '.join(getattr(exc, 'reasons', [str(exc)]))}",
               file=sys.stderr)
         return 1
+    if doc.get("attestation"):
+        print(doc["attestation"])
     print(f"churn {args.fold}: {len(doc['combos'])} combos over "
           f"{sum(doc['universe']['class_counts'].values())} partitioned "
           f"tickers -> {CHURN_DIR}/{args.fold}/{CHURN_FILE} "
