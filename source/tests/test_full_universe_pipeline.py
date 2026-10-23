@@ -233,7 +233,9 @@ def test_g4_empty_universe_aborts_naming_hard_floor(tmp_path):
                         if p.is_file()}   # noqa: E731 — only files carry bytes; dirs are scratch containers
     before = (snap(root / "index.html"), snap(root / "indicator_stats.json"),
               dry_snap())
-    env = {**os.environ, "ROCKET_FORCE_EMPTY_UNIVERSE": "1"}
+    store_before = fu.CACHE_DIR.is_dir()     # MC 11197 (F1) sentinel, below
+    env = {**os.environ, "ROCKET_FORCE_EMPTY_UNIVERSE": "1",
+           "ROCKET_STORE_LOCK": str(tmp_path / ".demo-publish.lock")}
     r = subprocess.run([sys.executable,
                         str(TESTS.parent / "scripts" / "generate_demo_page.py"),
                         "--dry-run", "--skip-fetch"],
@@ -244,6 +246,10 @@ def test_g4_empty_universe_aborts_naming_hard_floor(tmp_path):
     assert "PAGE-BYTES total=" in r.stderr             # §9 #5 pin, red too
     assert (snap(root / "index.html"), snap(root / "indicator_stats.json"),
             dry_snap()) == before
+    # MC 11197 (F1): without the lock seam the entrypoint's flock mkdir'd the
+    # store root here, and the empty source/data/ flipped test_registry_purge's
+    # store-absent skips into failures on the next collection.
+    assert fu.CACHE_DIR.is_dir() == store_before
 
 
 # ── G5 HTML ceiling: exact MAX_HTML_BYTES boundary; refusal writes nothing ──
