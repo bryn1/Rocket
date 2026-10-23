@@ -21,6 +21,7 @@ Replaces demo_universe.py (R1); demo_universe is deleted by the T4 wiring.
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 from dataclasses import dataclass, field
@@ -39,6 +40,18 @@ REGISTRY_VERSION = 2
 REGISTRY_MIN = 10_000          # m_unique floor, aborts before any network
 MIN_REGIONS = 8                # non-empty buckets required
 SHRINK_FACTOR = 0.8            # m_unique >= 0.8 * anchor (C2-F5)
+
+# ── C1 fail-closed input gate (MC 11184, d2-security F1) ────────────────────
+# The ONE allowlist home (d2 F9: "same allowlist regex ... one place"). A
+# ticker not matching, or a region key not matching, makes load_plan REFUSE
+# (never silently drop). '/' stays legal for class shares (BRK/A, BF/B —
+# seam C4's cache_filename escapes the same char; the live registry carries
+# 12 of them, so dropping '/' would refuse the REAL registry). Region keys
+# are lowercase in the live registry (and in REGION_META). This gate is also
+# what makes the renderer's onclick="showRegion('<reg>')" JS-string context
+# safe — html.escape there does NOT protect that context on its own.
+TICKER_RE = re.compile(r"^[A-Z0-9._/-]{1,32}$")
+REGION_RE = re.compile(r"^[a-z0-9._-]{1,32}$")
 
 # ── ONE constants home for the page budget (DESIGN §9 #5, C2-F3) ───────────
 MAX_HTML_BYTES = 2_500_000
@@ -144,6 +157,24 @@ def m_unique_of(assigned: dict[str, list[str]]) -> int:
                if k not in (OKONTROLLERAT_KEY, INTERNATIONAL_KEY))
 
 
+def _assert_registry_charset(buckets) -> None:
+    """C1 gate (MC 11184, d2 F1): every region key and every ticker entry
+    must match the module allowlists and be a str, else RegistryError names
+    the offender — a bad registry REFUSES the run, nothing is dropped."""
+    if not isinstance(buckets, dict):
+        raise RegistryError("registry 'tickers' is not an object")
+    for region, members in buckets.items():
+        if not isinstance(region, str) or not REGION_RE.match(region):
+            raise RegistryError(f"registry region key rejected: {region!r}")
+        if not isinstance(members, list):
+            raise RegistryError(f"registry bucket {region!r} is not a list")
+        for t in members:
+            if not isinstance(t, str) or not TICKER_RE.match(t):
+                raise RegistryError(
+                    f"registry ticker rejected: {t!r} (region {region!r}) — "
+                    f"must match {TICKER_RE.pattern}")
+
+
 def load_plan(cache_path: Path | None = None, *,
               anchor_m_unique: int | None = None,
               git_check: bool = True) -> UniversePlan:
@@ -163,6 +194,7 @@ def load_plan(cache_path: Path | None = None, *,
             f"registry version {doc.get('version')!r} != {REGISTRY_VERSION}"
             if isinstance(doc, dict) else "registry is not an object")
     buckets = doc.get("tickers") or {}
+    _assert_registry_charset(buckets)
     assigned = assign_primary_regions(buckets)
     m_unique = m_unique_of(assigned)
     non_empty = sum(1 for r, v in buckets.items()
