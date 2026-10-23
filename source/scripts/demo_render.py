@@ -10,6 +10,7 @@ deterministic for fixed inputs.
 """
 from __future__ import annotations
 
+import html
 import math
 import sys
 from datetime import datetime, timedelta
@@ -112,6 +113,16 @@ def _num(v):
     return v is not None and not (isinstance(v, float) and math.isnan(v))
 
 
+def _esc(v) -> str:
+    """C1 (MC 11184, d2 F1): the ONE html.escape point — every dynamic string
+    (registry ticker/region, artifact fields, display stamps) reaches HTML
+    through here. str() keeps numeric cells byte-identical (f"{10.5}" ==
+    str(10.5)); quotes are escaped too (attribute contexts). Honest limit:
+    escaping cannot protect the onclick JS-string context — that is held by
+    full_universe's REGION_RE gate, never silently by this helper."""
+    return html.escape(str(v), quote=True)
+
+
 def _pct(v) -> str:
     return f"{100 * v:.1f}%" if _num(v) else "—"
 
@@ -162,23 +173,24 @@ def settled_gate_ok(data_last_bar: str, run_iso: str,
 
 def _table(rows: list[dict], panel_id: str, label: str | None = None,
            note: str | None = None) -> str:
-    data_attr = f' data-label="{label}"' if label else ""
-    parts = [f'<div class="region-panel" id="panel-{panel_id}"{data_attr} '
+    data_attr = f' data-label="{_esc(label)}"' if label else ""
+    parts = [f'<div class="region-panel" id="panel-{_esc(panel_id)}"'
+             f'{data_attr} '
              'role="tabpanel">']
     if note:
-        parts.append(f'<div class="region-note">{note}</div>')
+        parts.append(f'<div class="region-note">{_esc(note)}</div>')
     parts.append('<div class="table-wrap"><table><thead><tr>'
                  '<th>Ticker</th><th>Signal</th><th>Overall</th><th>Momentum</th>'
                  '<th>Trend</th><th>Volatility</th><th>Volume</th><th>Close</th>'
                  '</tr></thead><tbody>')
     for r in rows:
         parts.append(
-            f'<tr><td>{r["ticker"]}</td>'
-            f'<td class="{_signal_class(r["signal"])}">{r["signal"]}</td>'
+            f'<tr><td>{_esc(r["ticker"])}</td>'
+            f'<td class="{_signal_class(r["signal"])}">{_esc(r["signal"])}</td>'
             f'<td class="{_score_class(r["overall"])}">{r["overall"]:.1f}</td>'
             f'<td>{r["momentum"]:.1f}</td><td>{r["trend"]:.1f}</td>'
             f'<td>{r["volatility"]:.1f}</td><td>{r["volume"]:.1f}</td>'
-            f'<td>{r["close"]}</td></tr>')
+            f'<td>{_esc(r["close"])}</td></tr>')
     parts.append('</tbody></table></div></div>')
     return "\n".join(parts)
 
@@ -196,12 +208,13 @@ def _indicator_row(key: str, ind: dict, h: int) -> str:
     if errors:
         signals += f' <span class="calc-err">beräkningsfel: {errors}</span>'
     return (
-        f'<tr><td>{name}{badge}</td><td>{ind.get("category", "")}</td>'
+        f'<tr><td>{_esc(name)}{badge}</td>'
+        f'<td>{_esc(ind.get("category", ""))}</td>'
         f'<td>{signals}</td>'
         f'<td>{_pct(long_blk.get("hit_rate"))}</td>'
         f'<td>{_netpct(long_blk.get("avg_net_pct"))}</td>'
         f'<td>{_pct(short_blk.get("hit_rate"))}</td>'
-        f'<td class="{css}">{label}</td></tr>')
+        f'<td class="{css}">{_esc(label)}</td></tr>')
 
 
 def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
@@ -213,7 +226,7 @@ def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
              'style="display:none">',
              '<h2>Indikatorer — backtest</h2>']
     if note:
-        parts.append(f'<div class="ind-note">{note}</div>')
+        parts.append(f'<div class="ind-note">{_esc(note)}</div>')
     if not doc or not doc.get("indicators"):
         parts.append(f'<div class="ind-note">{EMPTY_BACKTEST_TEXT}</div></div>')
         return "\n".join(parts)
@@ -221,7 +234,7 @@ def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
     if eng.get("tickers"):
         parts.append(
             f'<div class="region-note">Statistik på {eng["tickers"]} tickers '
-            f'(veckovis urval, senast {doc.get("generated_at", "?")})</div>')
+            f'(veckovis urval, senast {_esc(doc.get("generated_at", "?"))})</div>')
     h = doc.get("primary_horizon_days", 10)
     order = sorted(doc["indicators"].items(),
                    key=lambda kv: (_EV_RANK.get(
@@ -229,7 +242,7 @@ def render_indikatorer_panel(doc: dict | None, note: str | None) -> str:
     parts.append(
         '<div class="table-wrap"><table><thead><tr>'
         '<th>Namn</th><th>Kategori</th><th>Köp/Sälj-signaler</th>'
-        f'<th>Hit-rate ({h}d)</th><th>Net % ({h}d)</th>'
+        f'<th>Hit-rate ({_esc(h)}d)</th><th>Net % ({_esc(h)}d)</th>'
         '<th>Short hit-rate</th><th>Evidence-vikt</th>'
         '</tr></thead><tbody>')
     for key, ind in order:
@@ -260,10 +273,10 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
                 'aria-selected="true" onclick="showRegion(\'all\',this)">'
                 f'Alla ({len(alla_rows)})</button>')
     for reg in regions:
-        tabs.append('<button class="tab-btn" id="tab-' + reg + '" role="tab" '
+        tabs.append('<button class="tab-btn" id="tab-' + _esc(reg) + '" role="tab" '
                     'aria-selected="false" '
-                    f'onclick="showRegion(\'{reg}\',this)">'
-                    f'{region_label(reg)} ({len(results.get(reg, []))})</button>')
+                    f'onclick="showRegion(\'{_esc(reg)}\',this)">'
+                    f'{_esc(region_label(reg))} ({len(results.get(reg, []))})</button>')
     tabs.append('<button class="tab-btn" id="tab-indicators" role="tab" '
                 'aria-selected="false" onclick="showRegion(\'indicators\',this)">'
                 'Indikatorer</button>')
@@ -277,15 +290,15 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
     panels.append(render_indikatorer_panel(indicators, indicators_note))
 
     top_rows = "".join(
-        f'<tr><td>{r["ticker"]}</td>'
-        f'<td class="{_signal_class(r["signal"])}">{r["signal"]}</td>'
+        f'<tr><td>{_esc(r["ticker"])}</td>'
+        f'<td class="{_signal_class(r["signal"])}">{_esc(r["signal"])}</td>'
         f'<td class="{_score_class(r["overall"])}">{r["overall"]:.1f}</td></tr>'
         for r in top10)
 
     # Universe section (R4): per-region registry counts + the filter pointer
     # — never every ticker literally again (389 B today, ~115 KB at 12.8k).
     universe_lines = "".join(
-        f'<div class="region-note"><b>{region_label(reg)}</b> '
+        f'<div class="region-note"><b>{_esc(region_label(reg))}</b> '
         f'({len(plan.regions.get(reg, []))})</div>'
         for reg in regions)
     universe_lines += ('<div class="region-note">Hitta en ticker: filtret '
@@ -294,12 +307,12 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
     stats_stamp = ""
     if indicators and indicators_note and indicators.get("generated_at"):
         stats_stamp = (f' · Indikatorstatistik från '
-                       f'{indicators["generated_at"]} (bärs vidare)')
+                       f'{_esc(indicators["generated_at"])} (bärs vidare)')
     dropped_note = (f' · {len(plan.dropped)} tickers utan primärregion'
                     if getattr(plan, "dropped", None) else "")
 
     excluded_note = (f' · {len(excluded)} tickers excluded (not fetched 2+ '
-                     f'nights, e.g. {", ".join(excluded[:2])})'
+                     f'nights, e.g. {_esc(", ".join(excluded[:2]))})'
                      if excluded else "")
 
     return f"""<!DOCTYPE html>
@@ -308,7 +321,7 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
 <title>Rocket — Stock Scanner Demo</title>{STYLE}</head>
 <body><div class="wrap">
 <header class="page"><h1>Rocket — Stock Scanner Demo</h1>
-<div class="{banner_cls}" id="freshness" role="status">Data hämtad {run_ts} · Senaste kursdatum: {last_bar_txt}</div>
+<div class="{banner_cls}" id="freshness" role="status">Data hämtad {_esc(run_ts)} · Senaste kursdatum: {_esc(last_bar_txt)}</div>
 <div class="sub">Läs-only demo · scorerade {n} av {plan.m_unique} tickers i registret · {len(regions)} regioner · scorerade med Rocket-score</div></header>
 <h2>Rankings</h2>
 <div style="margin-bottom:10px"><input type="text" placeholder="Filtrera ticker…" aria-label="Filtrera ticker" oninput="filterTable(this)"> <span id="filter-status" class="region-note" role="status" style="display:inline;margin-left:8px"></span></div>
@@ -319,5 +332,5 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
 <tbody>{top_rows}</tbody></table></div>
 <h2>Universe</h2>
 {universe_lines}
-<div class="footer">Genererad {run_ts} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · Registry {plan.registry_ts}{dropped_note}{excluded_note} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
+<div class="footer">Genererad {_esc(run_ts)} av scripts/generate_demo_page.py — data hämtas och sidan publiceras dagligen (systemd-timer rocket-demo-publish).{stats_stamp} · Registry {_esc(plan.registry_ts)}{dropped_note}{excluded_note} · <a href="indicators.html">Metodik och indikatorförklaring</a></div>
 </div>{JS}</body></html>"""
