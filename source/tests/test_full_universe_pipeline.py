@@ -149,7 +149,8 @@ def test_g1_dry_run_green_pairs_and_floor_below_040_red(monkeypatch, tmp_path,
     gen.main()                                # green dry pass first (F6 pair)
     dry = (tmp_path / "dry" / "index.html").read_bytes()
     assert b"scorerade 51 av 51" in dry       # av <fixture m> follows fixture
-    # literal §9 G1 red: scored stubbed < 0.40 x M = round(0.4*51) = 20:
+    # literal §9 G1 red: scored stubbed < 0.40 x M = ceil(0.4*51) = 21 (C3,
+    # MC 11186: exact integer ceil, not banker's round — round gave 20):
     monkeypatch.setattr(gen, "score_store",
                         lambda plan, **k: scored_stub(counts={"usa": 12},
                                                       skip=tuple(PLAN.order[1:])))
@@ -157,7 +158,7 @@ def test_g1_dry_run_green_pairs_and_floor_below_040_red(monkeypatch, tmp_path,
         gen.main()
     assert e.value.code == 1
     err = capsys.readouterr().err
-    assert "FAIL-CLOSED" in err and "scorerade rader (golv 20)" in err
+    assert "FAIL-CLOSED" in err and "scorerade rader (golv 21)" in err
     # floors run BEFORE the dry write (F6): dry file byte-stable, roots blank:
     assert (tmp_path / "dry" / "index.html").read_bytes() == dry
     assert not gen.INDEX_PATH.exists() and not gen.STATS_PATH.exists()
@@ -289,7 +290,7 @@ def test_g6_zero_hongkong_rows_fail_closed_naming_region(monkeypatch, tmp_path,
 
 def test_g6_partial_below_half_named_and_boundary_green(floors_patched):
     reasons = _guard(results=scored_stub(counts={"hongkong": 5})["results"],
-                     prev=FRESH_BAR)         # 1 <= 5 < round(0.5*12) = 6
+                     prev=FRESH_BAR)         # 1 <= 5 < ceil(0.5*12) = 6
     hk = [r for r in reasons if "hongkong" in r]
     assert len(reasons) == 1 == len(hk) and "golv >= 6" in hk[0]
     assert _guard(results=scored_stub(counts={"hongkong": 6})["results"],

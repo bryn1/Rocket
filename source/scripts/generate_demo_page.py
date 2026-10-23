@@ -30,6 +30,7 @@ import sys
 import time
 from collections import Counter
 from datetime import datetime, timezone
+from fractions import Fraction
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -49,6 +50,16 @@ MANIFEST_PATH = DRY_DIR / "run_manifest.json"
 HARD_SCORED_FLOOR = 2_500     # §9 #1; fixtures patch these two constants
 SCORED_FLOOR_FRACTION = 0.40
 G6_FRACTION = 0.5             # §9 #2 per-region coverage
+
+
+def _ceil_floor(fraction: float, n: int) -> int:
+    """Exact integer ceil(n * fraction) — the ONLY floor math for the two
+    §9 floors (C3, MC 11186). round() is banker's rounding and let both
+    guards fail OPEN at 49.66-49.99 % (d3 F2). The float constant is read
+    back as the human fraction it names (limit_denominator), then the ceil
+    is pure integer math: (num*n + den - 1) // den — never a float."""
+    f = Fraction(fraction).limit_denominator(1000)
+    return (f.numerator * n + f.denominator - 1) // f.denominator
 
 
 # ── stage 0: registry (T3 seam: full_universe owns floors + anchor math) ────
@@ -152,14 +163,15 @@ def _guard(html_text: str, plan, assignments: dict, scored_by_region: dict,
     reasons: list[str] = []
 
     total = sum(len(rows) for rows in scored_by_region.values())
-    floor = max(HARD_SCORED_FLOOR, round(SCORED_FLOOR_FRACTION * plan.m_unique))
+    floor = max(HARD_SCORED_FLOOR,
+                _ceil_floor(SCORED_FLOOR_FRACTION, plan.m_unique))
     if total < floor:
         reasons.append(f"endast {total} scorerade rader (golv {floor})")
 
     for reg in plan.order:                       # G6, per region, by name
         n_r = len(plan.regions.get(reg, []))
         s_r = len(scored_by_region.get(reg, []))
-        g6_floor = round(G6_FRACTION * n_r)
+        g6_floor = _ceil_floor(G6_FRACTION, n_r)
         if s_r < 1 or s_r < g6_floor:
             reasons.append(f"G6 region {reg}: scorerade {s_r} av {n_r} "
                            f"(golv >= {max(1, g6_floor)})")
