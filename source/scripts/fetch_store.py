@@ -52,7 +52,12 @@ overwrites the walk round; a frame in ANY res dominates -> .get reads None).
 typed_counts/capture — capture is bulk_fetcher's canary when the production
 seam is bound; an injected seam IS the typed channel ("ctx"). The §5 3b
 split-requeue tail keeps its fail-closed no-pacing shape: its members
-already landed, so their typed facts are None-dominated before it runs."""
+already landed, so their typed facts are None-dominated before it runs.
+
+writes_enabled (MC 11187, D8-R1 (c)): the entrypoint passes False on
+--dry-run — the walk classifies, fetches and records facts EXACTLY as
+above, but absorb never upserts: a rehearsal leaves the store byte-
+identical (the facts-only walk is the ONLY behaviour difference)."""
 from __future__ import annotations
 
 import sys
@@ -72,7 +77,7 @@ def is_rate_limit(exc: BaseException) -> bool:
 
 
 def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
-              errors=None, stats=None) -> dict:
+              errors=None, stats=None, writes_enabled=True) -> dict:
     facts = {t: {"batch_completed": False, "typed": None}
              for r in plan.order for t in plan.regions.get(r, [])}
     if skip_fetch or not facts:
@@ -109,6 +114,8 @@ def run_fetch(plan, *, skip_fetch, now_fn, cache_dir=None, fetcher=None,
                 facts[t]["batch_completed"] = True
             elif starve_into is not None:
                 starve_into.append(t)  # joined a completed batch, no frame
+        if not writes_enabled:
+            return  # dry-run READ-ONLY store (MC 11187 c): facts ride, CSVs don't
         for t, frame in res.items():
             try:
                 if not backfill:

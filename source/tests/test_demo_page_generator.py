@@ -250,11 +250,12 @@ def test_guard_settled_bar_regression_and_note(floors_patched, capsys):
     assert "veckodagsregeln ensam" in capsys.readouterr().err
 
 
-def test_fail_closed_guard_red_case_roots_stable():
+def test_fail_closed_guard_red_case_roots_stable(tmp_path):
     def sha(p):
         return p.read_bytes() if p.exists() else b""
     before = (sha(gen.INDEX_PATH), sha(gen.STATS_PATH))
-    env = {**os.environ, "ROCKET_FORCE_EMPTY_UNIVERSE": "1"}
+    env = {**os.environ, "ROCKET_FORCE_EMPTY_UNIVERSE": "1",
+           "ROCKET_STORE_LOCK": str(tmp_path / ".demo-publish.lock")}
     r = subprocess.run([sys.executable, str(SCRIPTS / "generate_demo_page.py"),
                         "--dry-run", "--skip-fetch"],
                        cwd=str(gen.REPO_ROOT / "source"), env=env,
@@ -281,6 +282,8 @@ def _wire_main(monkeypatch, tmp_path, dry=True, doc=SAMPLE_DOC, note=None):
     monkeypatch.setattr(gen, "STATS_PATH", tmp_path / "root-stats.json")
     monkeypatch.setattr(gen, "publish",
                         lambda html, stats, markers: "f" * 40)
+    monkeypatch.setenv("ROCKET_STORE_LOCK",                       # MC 11187 (b)
+                       str(tmp_path / ".demo-publish.lock"))
     monkeypatch.setattr(sys, "argv",
                         ["gen", "--skip-fetch"] + (["--dry-run"] if dry else []))
 

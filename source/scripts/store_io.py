@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import os
 import sys
+import tempfile
 from datetime import date, datetime, time, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -200,9 +201,22 @@ def _normalized(df: pd.DataFrame) -> pd.DataFrame:
 
 def _atomic_write(df: pd.DataFrame, path: Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_name(path.name + ".tmp")
-    df.to_csv(tmp, index=False)
-    os.replace(tmp, path)  # rename is atomic within one filesystem
+    # D8-R1 (MC 11187): the OLD fixed name path.name + ".tmp" was shared
+    # mutable state — a second writer's os.replace renamed the temp one was
+    # still writing (6–57 errors/60 ops + parseable duplicate-date files on
+    # a scratch probe). mkstemp in the SAME dir gives every writer its own
+    # name; the swap stays atomic within one filesystem.
+    fd, tmp_name = tempfile.mkstemp(dir=path.parent, prefix=path.name + ".",
+                                    suffix=".tmp")
+    os.close(fd)
+    tmp = Path(tmp_name)
+    try:
+        df.to_csv(tmp, index=False)
+        os.chmod(tmp, 0o644)      # mkstemp creates 0600; store CSVs are 644
+        os.replace(tmp, path)     # rename is atomic within one filesystem
+    except BaseException:
+        tmp.unlink(missing_ok=True)   # no crash residue in the store dir
+        raise
 
 
 def data_last_bar(last_dates) -> str:

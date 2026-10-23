@@ -85,6 +85,8 @@ def _stage0_env(monkeypatch, tmp_path, cache_path, stats_doc="missing"):
         raise AssertionError("fetch reached — S0 must abort BEFORE any network")
     monkeypatch.setattr(gen, "fetch_store", spy)
     monkeypatch.delenv("ROCKET_FORCE_EMPTY_UNIVERSE", raising=False)
+    monkeypatch.setenv("ROCKET_STORE_LOCK",                       # MC 11187 (b)
+                       str(tmp_path / ".demo-publish.lock"))
     monkeypatch.setattr(sys, "argv", ["gen", "--dry-run"])
 
 
