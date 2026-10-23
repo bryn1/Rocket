@@ -15,15 +15,19 @@ backoff ladder live in fetch_store.py, MC 10309) -> 2 score_all Pool(8)
 settled gate) -> 6 publish (demo_publish: §6a sync-before-write, 2b,
 ls-remote proof).
 
---dry-run applies ALL floors before writing (F6); --skip-fetch renders from
-the store (exempts §9 #3's not_fetched == 0 only); --force-backtest forces
-the weekly redraw; ROCKET_FORCE_EMPTY_UNIVERSE=1 swaps in the EMPTY FIXTURE
-PLAN — the deterministic guard red case. .tmp/run_manifest.json (scratch):
-prev-green reads PUBLISHED only — a green --dry-run writes its .dry sibling.
+--dry-run applies ALL floors before writing (F6) and is READ-ONLY against
+the store (D8-R1 c: the fetch stage records facts, never upserts);
+--skip-fetch renders from the store (exempts §9 #3's not_fetched == 0 only);
+--force-backtest forces the weekly redraw; ROCKET_FORCE_EMPTY_UNIVERSE=1
+swaps in the EMPTY FIXTURE PLAN — the deterministic guard red case. A non-
+blocking flock on .demo-publish.lock (store root) serialises every entry
+(D8-R1 b). .tmp/run_manifest.json (scratch): prev-green reads PUBLISHED
+only — a green --dry-run writes its .dry sibling.
 """
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import sys
@@ -50,6 +54,42 @@ MANIFEST_PATH = DRY_DIR / "run_manifest.json"
 HARD_SCORED_FLOOR = 2_500     # §9 #1; fixtures patch these two constants
 SCORED_FLOOR_FRACTION = 0.40
 G6_FRACTION = 0.5             # §9 #2 per-region coverage
+
+# ── D8-R1 (MC 11187): single-publisher lock — first act of every entry ──────
+
+_lock_fd: int | None = None        # held for the PROCESS lifetime (flock owner)
+
+
+def _store_lock_path() -> Path:
+    env = os.environ.get("ROCKET_STORE_LOCK")    # test seam (fixture-env idiom)
+    if env:
+        return Path(env)
+    import store_io
+    return store_io.CACHE_DIR / ".demo-publish.lock"
+
+
+def _acquire_publisher_lock() -> None:
+    """Non-blocking flock on a lockfile in the store root — systemd only
+    serialises the TIMER; the documented direct invocation had no guard
+    (D8 R1: any second writer tears the store). Held => loud "another run
+    in progress", exit 1, ZERO writes (runs before every stage). Same-
+    process re-entry (tests call main() twice) reuses the held lock: the
+    guard is CROSS-process (nightly vs manual); the fd is never closed, so
+    the kernel releases it at exit."""
+    global _lock_fd
+    if _lock_fd is not None:
+        return
+    path = _store_lock_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        os.close(fd)
+        print(f"FAIL-CLOSED — another run in progress (publisher lock held: "
+              f"{path})", file=sys.stderr)
+        sys.exit(1)
+    _lock_fd = fd
 
 
 def _ceil_floor(fraction: float, n: int) -> int:
@@ -251,14 +291,16 @@ def _with_registry_anchor(doc: dict | None, plan) -> dict | None:
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dry-run", action="store_true",
-                        help="render to .tmp/, write nothing in the root, no "
-                             "git — ALL floors still apply (F6)")
+                        help="render to .tmp/, no root writes, no git, store "
+                             "READ-ONLY (MC 11187) — ALL floors apply (F6)")
     parser.add_argument("--skip-fetch", action="store_true",
                         help="render from the store; exempts §9 #3 "
                              "not_fetched == 0 only, never the floors")
     parser.add_argument("--force-backtest", action="store_true",
                         help="run the weekly Indikatorer redraw today (§8)")
     args = parser.parse_args()
+
+    _acquire_publisher_lock()      # D8-R1 (b): FIRST act — held lock = no run
 
     timings: dict[str, float] = {}
     errors: list[str] = []
@@ -283,8 +325,8 @@ def main() -> None:
     t = time.monotonic()
     fetch_stats: dict = {}                   # MC 10312 typed-capture stats
     fetch_facts = fetch_store(plan, skip_fetch=args.skip_fetch,
-                              now_fn=now_fn, errors=errors,
-                              stats=fetch_stats)
+                              now_fn=now_fn, errors=errors, stats=fetch_stats,
+                              writes_enabled=not args.dry_run)  # (c): dry = READ-ONLY
     timings["fetch"] = time.monotonic() - t
     if fetch_stats:                          # stderr journal, STARVED-style;
         tc = fetch_stats["typed_counts"]     # zero guard/accounting change
