@@ -10,7 +10,8 @@ Algorithm:
      - Volume spike => classify as earnings/news move (NOT split)
   4. Apply reverse-proportional adjustment to all pre-split prices.
 
-Reuse: Uses existing price manipulation patterns from backtest_all.py.
+Reuse: applies the price-manipulation pattern the retired batch backtest
+driver used inline (deleted 2026-10-24, MC 11199 batch B6).
 No new dependencies — pandas + numpy only.
 
 Public API

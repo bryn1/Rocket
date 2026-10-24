@@ -155,8 +155,8 @@ efter merge är E4 (orchestrator) — utförd (LEDGER 2026-10-08, "unit re-insta
   committad**, scratch.
 - Legacy-sidor som **serveras men saknar generator i repo** (`indicators.html`,
   `portfolio.html`, `region-top25.html` — för den sistnämnda finns numera ett
-  Score-kolumns-regen-skript i repo, se §8.3, men ingen hel sidogenerator):
-  **behålls** — deras URL:er är live; se §8.3.
+  Score-kolumns-regen-skript i repo, se §8.2, men ingen hel sidogenerator):
+  **behålls** — deras URL:er är live; se §8.2.
 
 ## 7. Hosting-kontrakt
 
@@ -171,17 +171,13 @@ efter merge är E4 (orchestrator) — utförd (LEDGER 2026-10-08, "unit re-insta
 
 ## 8. Kända begränsningar
 
-1. **`rocket/backtest/metrics.py`: trasig trade-parning.** `calculate_metrics` keyar
-   BUY på inköpsdatum och slår upp SELL på säljdatum — paren matchar aldrig.
-   Disqualificerad för återanvändning (`indicator_eval.py` bär egen event-study).
-   Separat fix-kort.
-2. **Dash-sidan i `app.py` scorear 28/34.** Sex mönsterindikatorer kastar tyst `KeyError`
+1. **Dash-sidan i `app.py` scorear 28/34.** Sex mönsterindikatorer kastar tyst `KeyError`
    på lowercase-frames. Den nattliga vägen är 34/34 — `to_indicator_frame`-omvandlaren
    appliceras direkt i `score_all.py`, och i sample-vägen inuti löparen
    `rocket/backtest/indicator_eval.py` (`run_indicator_eval`; `sample_backtest.py`
    importerar den inte själv) — men Dash-UI:t väntar fortfarande
    på samma omvandlare i sin egen väg. Follow-up-kort.
-3. **Frozen snapshots:** `region-top25.html` + `top25.json` (samt `portfolio.html`) har
+2. **Frozen snapshots:** `region-top25.html` + `top25.json` (samt `portfolio.html`) har
    ingen hel generator i repo och uppdateras inte — serveras som orörda snapshots
    (`region-top25.html`:s Score-kolumn har dock en regen-skript, se nedan).
    `region-top25.html`:s läge (re-auditin d7 + correcting 2026-10-23; LÖST av
@@ -200,7 +196,7 @@ efter merge är E4 (orchestrator) — utförd (LEDGER 2026-10-08, "unit re-insta
    efter publicering (ingen nightly-timer — sidan förblir en snapshot).
    `top25.json` var och förblir INTE dess Score-källa (0 ticker-overlap, annan epok).
    `lang="sv"` är fixat (a934aa1).
-4. **Snapshot-mekanik (accepterade residualer, DESIGN §13.8):** färskhetsbannern visar
+3. **Snapshot-mekanik (accepterade residualer, DESIGN §13.8):** färskhetsbannern visar
    globalmax av stabila bars — en ensam efterbliven marknad syns inte (per-region-datum i
    run-manifestet är instrumentet); veckodagsregeln har ingen helgedagskalender (den
    monotona prev-green-grinden täcker natten); sidepayloaden projekteras ~1,5–2 MB och är
@@ -215,19 +211,26 @@ universumdelen av september-produkten** — full täckning på dagens layout, da
 garantier mot återfall (§2-golven). Resten av den gamla visionen förblir bortvald:
 10-år historik (storen håller ~1 år), chattbot-dagsrecs, options-/social-scaling, autotrading.
 `universe_builder.py` lever vidare **bakom** `refresh_universe`-garden (aldrig nattligen).
-Chattbot-ärans död kod rederas nu batchvis av ett separat hygien-kort (MC 11199):
+Chattbot-ärans död kod rederades batchvis av ett separat hygien-kort (MC 11199):
 batch B1 (2026-10-24) raderade de sju scripten i `scripts/`, B2 bot-/Scan-Pro-klustret
 och B3 (2026-10-24) dag-cron-kedjan i `rocket/` (7 filer: signalkedjans cron-orphans —
 scoring, scan-cron, signalgenerator, universums-DB, portföljkoll och chattbot-ärans
 gamla nattskanner). Namnkollisionen till trots: den raderade nattskannern är
 INTE den levande produkten — nightly-pipelinen `rocket-demo-publish`
 (`source/scripts/generate_demo_page.py`) är opåverkad och finns kvar som trädets enda
-timerpar (MC 11200). Kvarvarande död kod (scoring-slirar, det gamla fetch-klustret,
-utils/backtest-strays) tas av samma korts påföljande batcher (B4–B6).
+timerpar (MC 11200). B4 (scoring-slirarna), B5 (det gamla fetch-klustret) och B6
+(2026-10-24: utils-paketet, de döda backtest-modulerna och rot-strays — 12 filer,
+1 485 L) slutförde kortet — ingen död massa lämnas i `source/`. Inventeringen,
+följarna och grep-noll-bevisen ligger i `.audits/20261023-0705-full-reaudit/`.
 
 ---
 
-*Uppdaterad: 2026-10-24 (MC 11199 batch B3: dag-cron-kedjan i `rocket/` raderad (7 filer),
+*Uppdaterad: 2026-10-24 (MC 11199 batch B6 — terminal batch: utils-paketet, de döda
+backtest-modulerna och rot-strays raderade (12 filer/1 485 L); §8-begränsningspunkten
+om den raderade backtest-modulen borttagen och §8 omnumrerad (§8.3-hänvisningar → §8.2),
+§9 och README:s död-kod-punkter skrivna till dåtid; de två dataquality-doksträngarna
+som nämnde det döda driver-skriptet omformulerade — allt i samma commit. Tidigare samma
+dag: MC 11199 batch B3: dag-cron-kedjan i `rocket/` raderad (7 filer),
 §9 i samma commit; ruff.toml-per-fil-ignores följer med. Tidigare samma dag: MC 11199 batch B1: chattbot-era-scripten i `scripts/` och de
 fyra vilande systemd-enheterna raderade; §9 omskriven. Tidigare samma dag: MC 11200 docs
 de-stale: fix-wave-guarderna (ceil-golv, tecken-gate,

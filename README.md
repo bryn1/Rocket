@@ -5,8 +5,8 @@ local CSV store, an evidence-weighted **Rocket score**, and a hosted, read-only
 demo page of its output. This repository holds the scanner engine and the
 hosted demo. The retired chat-bot-era product (messaging bot, crypto price
 sources, broker price sources, portfolio scans) is **not** the product — its
-dead packages still sit in the tree, inventoried in `docs/ARCHITECTURE.md` §9;
-a separate hygiene card owns their removal.
+dead packages sat in the tree until the retirement batches (MC 11199, B1–B6)
+deleted them 2026-10-24; `docs/ARCHITECTURE.md` §9 keeps the historical record.
 
 ## The Rocket score
 
@@ -160,11 +160,11 @@ hosting alias can never expose engine source:
     and the walk-forward campaign engines
   - `source/rocket/dataquality/` — split-adjust (used nightly via `store_io`) and outlier
     detection; the rest of the package is retired-era
-  - the remaining retired-era mass (the util package, the dead backtest modules,
-    the remaining strays) is **dead code**, inventoried in
-    `.audits/20261023-0705-full-reaudit/d6-design.md`, owned by the hygiene card named in
-    `docs/ARCHITECTURE.md` §9 — not part of the product; the chat-bot-era messaging, scan
-    and user-store packages plus the era scripts, the daily-cron chain, the dead scoring
-    slivers and the retired fetch package were deleted 2026-10-24 (MC 11199 batches B1–B5)
+  - the retired-era dead mass is **fully deleted** (2026-10-24, MC 11199 batches
+    B1–B6): the chat-bot-era messaging, scan and user-store packages, the era
+    scripts, the daily-cron chain, the dead scoring slivers, the retired fetch
+    package, the util package, the dead backtest modules and the remaining strays —
+    65 files; the inventory, companions and grep-zero proof live in
+    `.audits/20261023-0705-full-reaudit/`
   - `source/tests/`, `source/requirements.txt` — tests, pins
 - `docs/ARCHITECTURE.md` — architecture of the shipped product (modules, pipeline, hosting contract)

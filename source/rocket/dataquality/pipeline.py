@@ -1,7 +1,8 @@
 """Pipeline orchestration layer for data quality.
 
 Orchestrates split adjustment + outlier handling + validation into a single
-clean pipeline. Replaces the inline quality filters in backtest_all.py.
+clean pipeline — in place of the inline quality filters the retired batch
+backtest driver carried (deleted 2026-10-24, MC 11199 batch B6).
 
 Public API
 ----------
