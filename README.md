@@ -1,13 +1,16 @@
 # Rocket — Stock Scanner
 
-Rocket is a technical stock scanner: a data pipeline (yfinance / CoinGecko / OpenAvanza),
-an evidence-weighted **Rocket score**, a Dash dashboard, a CLI, and a Telegram bot. This
-repository holds the scanner engine and a hosted, read-only demo of its output.
+Rocket is a technical stock scanner: a nightly yfinance OHLCV pipeline into a
+local CSV store, an evidence-weighted **Rocket score**, and a hosted, read-only
+demo page of its output. This repository holds the scanner engine and the
+hosted demo. The retired chat-bot-era product (messaging bot, crypto price
+sources, broker price sources, portfolio scans) is **not** the product — its
+dead packages still sit in the tree, inventoried in `docs/ARCHITECTURE.md` §9;
+a separate hygiene card owns their removal.
 
 ## The Rocket score
 
-For each ticker the engine runs **34 technical indicators** across four families and folds
-them into a single evidence-weighted score:
+For each ticker the engine runs **34 technical indicators** across four families:
 
 | Family | Indicators | Examples |
 |--------|-----------:|----------|
@@ -16,63 +19,89 @@ them into a single evidence-weighted score:
 | Volatility | 3  | Bollinger Bands, ATR, Donchian Channel |
 | Volume     | 3  | OBV, MFI, VWAP |
 
-Of the **34 registered** indicators, **31 vote** on direction; **3 are risk-only**
-(Bollinger Bands, ATR, Donchian Channel — they feed the risk multiplier, not the vote).
-The indicators vote by family; a confidence and a risk multiplier are applied, and the
-result is an **Overall score (0–100)** plus a **BUY / HOLD / SELL** signal per ticker, with
-per-category sub-scores for Momentum, Trend, Volatility and Volume. The full list lives in
-`source/rocket/scoring/rocket_score.py` (`INDICATORS`).
+The **score on the hosted page** is the nightly path
+(`source/scripts/score_all.py` → the `app.py` seam → `scoring/weighter.py`):
+every indicator result is averaged within its family, and the family averages
+are combined as **Momentum 50 % + Trend 35 % + Volume 10 % + Volatility 5 %**
+→ an **Overall score (0–100)** plus per-category sub-scores for Momentum,
+Trend, Volatility and Volume; the row's **BUY / HOLD / SELL** is the majority
+of the per-indicator signals. Stated honestly: the three volatility-family
+indicators (Bollinger Bands, ATR, Donchian Channel) therefore **do** move the
+page score through the 5 % Volatility bucket. The separate
+`source/rocket/scoring/rocket_score.py` path (Dash UI / CLI,
+`compute_rocket_score`) additionally applies confidence, risk and regime
+multipliers and treats those three as risk-only (34 registered / 31 voting
+there) — those multipliers are **never applied on the hosted page**. The full
+indicator list lives in `rocket_score.py` (`INDICATORS`).
 
 ## The hosted page is a daily snapshot of the full universe
 
 The nightly pipeline in this tree fetches, scores and publishes to
-**https://sibbamala.com/rocket/** a **static, read-only snapshot** — not a live scan —
-covering the **whole tracked universe**: every ticker in the registry
-`source/rocket/data/universe_cache.json` — **12,793 unique tickers across 15 regions**
-(usa 6,652, india 1,798, hongkong 1,122, japan 997, sweden 742, uk 356, norway 293, finland
-194, australia 151, denmark 145, canada 144, korea 100, switzerland 35, germany 32, france 32;
-registry timestamped 2026-09-13) — fetched and scored fresh on every nightly run. Concretely:
+**https://sibbamala.com/rocket/** a **static, read-only snapshot** — not a live
+scan — covering the **whole tracked universe**: every ticker in the registry
+`source/rocket/data/universe_cache.json`, fetched and scored fresh on every
+nightly run. Registry size, per-region counts and timestamp are volatile (they
+move only through the guarded refresh CLI below), so this contract carries no
+numbers: **the current registry epoch is recorded, dated, in
+[`LEDGER.md`](LEDGER.md)**. Concretely:
 
-- **Every scored ticker** appears in its region tab; the **Alla** panel shows the **Top-500 by
-  score**, and the filter box searches **every** panel, so any **scored** ticker is findable
-  (rows exist only for scored tickers — the guard floor below guarantees ≥5,117 of them;
-  a hit reveals the row and names its region)
-- **~1 year of daily OHLCV** per ticker, delta-appended nightly into a local CSV store; only
-  *settled* bars are stored (an in-progress session bar is stripped at write time)
-- **Regenerated nightly** by the systemd user timer `rocket-demo-publish.timer` (05:00 UTC). The
-  page carries a freshness line ("data hämtad …") *and* a coverage line
-  ("**scorerade N av M tickers i registret**"), so both currency and coverage are always visible
-- **A revert to a small page is guarded fail-closed**: the registry must stay ≥10,000 unique
-  with ≥8 non-empty regions, committed-clean and within 0.8× of the last published size; the
-  scored-rows floor is `max(2,500, 40 % of the registry)` = 5,117 at today's registry; every
-  region tab must score ≥50 % of its registry members; the page has a 2.5 MB ceiling. A silent
-  shrink is visible on the page as `scorerade 35 av 12793` — and cannot pass the guard.
+- **Every scored ticker** appears in its region tab; the **Alla** panel shows
+  the **Top-500 by score**, and the filter box searches **every** panel, so any
+  **scored** ticker is findable (rows exist only for scored tickers — the guard
+  floor below guarantees a minimum count of them; a hit reveals the row and
+  names its region)
+- **~1 year of daily OHLCV** per ticker, delta-appended nightly into a local
+  CSV store; only *settled* bars are stored (an in-progress session bar is
+  stripped at write time); every CSV is written atomically (per-writer temp +
+  rename) and a concurrent second entry into the pipeline is refused loudly by
+  a store lock
+- **Regenerated nightly** by the systemd user timer `rocket-demo-publish.timer`
+  (05:00 UTC). The page carries a freshness line ("data hämtad …") *and* a
+  coverage line ("**scorerade N av M tickers i registret**"), so both currency
+  and coverage are always visible from the artifact itself
+- **A revert to a small page is guarded fail-closed**: every registry region
+  key and ticker entry must pass the loader's character-allowlist gate (a bad
+  registry REFUSES the run, nothing is silently dropped); the registry must
+  stay ≥ 10,000 unique with ≥ 8 non-empty regions, committed-clean and within
+  0.8× of the last published size; the scored-rows floor is
+  `max(2 500, ceil(0.40 × registry size))` — exact integer **ceil**, so a
+  boundary region can never round its way past a floor; every region tab must
+  score ≥ `ceil(50 %)` of its registry members; the page has a 2.5 MB ceiling.
+  A silent shrink cannot pass the guard — it would show on the page as
+  `scorerade 35 av M` and refuse the publish.
 
-It remains honest about what it is: **read-only** (no live queries, no autotrading), a
-**snapshot** regenerated once a day, and each region row carries the signal plus four
-per-category sub-scores (Momentum, Trend, Volatility, Volume) rather than all 34
-indicators. The Indikatorer tab shows per-indicator backtest
-evidence (signal counts, hit-rate and net % per horizon) from a deterministic **500-ticker
-stratified sample**, redrawn **weekly (Saturday)** and carried with an explicit cadence note
-on other days. It makes **no claim** of live data. The full-universe scope is the owner's
-restored product (ruling 2026-10-07, MC 10220): the September universe coverage on today's
-layout, updated daily.
-
-> **Cutover status (2026-10-08 — delete at cutover close-out):** everything above describes the
-> product on this branch, status **TESTED** (same scoper as `docs/ARCHITECTURE.md` "Läsregel");
-> the URL above still serves the pre-cutover 35-ticker page until the first full-scale nightly
-> lands (**MC 10227**, pending).
+It remains honest about what it is: **read-only** (no live queries, no
+autotrading), a **snapshot** regenerated once a day, and each region row
+carries the signal plus four per-category sub-scores rather than all 34
+indicators. The Indikatorer tab shows per-indicator backtest evidence (signal
+counts, hit-rate and net % per horizon) from a deterministic **stratified
+sample of up to 500 tickers** (the committed artifact's own `sample.tickers`
+count is the authoritative post-filter number), redrawn **weekly (Saturday)**
+and carried with an explicit cadence note on other days. It makes **no claim**
+of live data. The full-universe scope is the owner's restored product (ruling
+2026-10-07, MC 10220): the September universe coverage on today's layout,
+updated daily.
 
 ## Nightly pipeline
 
-- The systemd user timer `rocket-demo-publish.timer` (unit files in `source/systemd/`) fires at
-  **05:00 UTC** and runs `source/scripts/generate_demo_page.py` through the stages in
-  `docs/ARCHITECTURE.md` §2: registry load (pre-network floors) → batched delta/backfill fetch
-  → parallel scoring of every stored ticker → weekly Indikatorer sample backtest (Saturday) or
-  honest carry → render → fail-closed guard → publish. Nothing is written unless the rendered
-  page passes every guard; on failure the last good page stays live.
-- The generator is the only writer of `index.html` and `indicator_stats.json`; it stages and
-  commits exactly those two paths, and the push to `main` is what deploys the page.
+- The systemd user timer `rocket-demo-publish.timer` (unit files in
+  `source/systemd/`) fires at **05:00 UTC** and runs
+  `source/scripts/generate_demo_page.py` through the stages in
+  `docs/ARCHITECTURE.md` §2: registry load (charset gate + pre-network floors)
+  → batched delta/backfill fetch → parallel scoring of every stored ticker →
+  weekly Indikatorer sample backtest (Saturday) or honest carry → render (every
+  dynamic string HTML-escaped) → fail-closed guard → publish. Nothing is
+  written unless the rendered page passes every guard; on failure the last good
+  page stays live. A non-blocking flock in the store root refuses a second
+  concurrent entry LOUDLY with zero writes, and `--dry-run` is READ-ONLY
+  against the store (facts ride, CSVs never).
+- The generator is the only writer of `index.html` and `indicator_stats.json`;
+  it stages and commits exactly those two paths, and the push to `main` is what
+  deploys the page. **Known coupling (undocumented until MC 11200):** the
+  publish guard refuses while the deploy tree carries foreign commits ahead of
+  `bryn1/main` — journal line `FAIL-CLOSED — lokala commits före bryn1/main` —
+  so checking out a card branch in the deploy tree freezes publishing until it
+  is landed or checked out again.
 - The registry itself is **never rebuilt nightly**. The only sanctioned path to a new
   `universe_cache.json` is the guarded CLI `python3 source/scripts/refresh_universe.py`
   (bounded shrink/growth, per-region and superset rules — refuse leaves the file untouched).
@@ -94,25 +123,42 @@ artifact the page's Indikatorer tab consumes. Architecture, seams and the hostin
 
 ## Repository layout
 
-The repo root holds **the served content** (the demo page, its backtest evidence, and the
-served legacy pages); the entire Python engine lives under `source/` (versioned but **not**
-served — see `hosting.yaml`), so the static hosting alias can never expose engine source:
+The repo root holds **the served content** (the demo page and the served legacy
+pages) plus the committed backtest evidence; the entire Python engine lives under
+`source/` (versioned but **not** served — see `hosting.yaml`), so the static
+hosting alias can never expose engine source:
 
 - Served pages (all live at https://sibbamala.com/rocket/): `index.html` (the read-only demo),
   `indicators.html` (methodology), `portfolio.html`, `region-top25.html`, `top25.json` (the
-  last three are frozen legacy snapshots kept live — see `docs/ARCHITECTURE.md` §8)
-- `indicator_stats.json` — per-indicator backtest evidence (written + committed by the
-  nightly generator)
+  last three are frozen legacy snapshots kept live — see `docs/ARCHITECTURE.md` §8;
+  `region-top25.html`'s Score column is dead — every row renders 0.00 — owner ruling
+  pending, MC 11188 open)
+- `indicator_stats.json` — per-indicator backtest evidence, written and committed by the
+  nightly generator but **not served** (the page embeds it; the hosting contract serves
+  exactly the five pages above)
 - `hosting.yaml` — deployment manifest (static demo; `root: apps/rocket`)
-- `source/` — the full scan engine (not served):
-  - `source/app.py`, `source/server.py` — the Dash dashboard (engine UI; not served — the hosted page is static)
+- `source/` — the engine (not served):
+  - `source/scripts/` — the nightly pipeline: `generate_demo_page.py` (orchestrator + entry
+    lock), `full_universe.py` (registry loader, charset gate, floors, the ONE constants
+    home), `fetch_store.py` + `store_io.py` (the sole CSV-store writer), `score_all.py`,
+    `sample_backtest.py` + `demo_indicators.py` (weekly Indikatorer branch), `demo_render.py`
+    (the single HTML-escape point), `demo_publish.py` (publish mechanics), `excluded_tickers.py`
+    (delisting exclusion list), `refresh_universe.py` (the ONLY
+    registry writer, guarded), `registry_purge.py`
+  - `source/app.py` — the Dash scoring seam the nightly reuses (`_compute_all_indicators`,
+    `_score_from_summary`) and a local Dash UI (engine UI, not served); `source/server.py`
+    is a legacy local-render entry, likewise not served
   - `source/rocket/scoring/` — the Rocket score (`rocket_score.py`, weighting, risk, confidence)
   - `source/rocket/technical/` — the 34 indicator implementations
-  - `source/rocket/dataquality/` — split-adjust, outlier detection, cleaning pipeline, position sizing
-  - `source/rocket/data/`, `source/data_fetcher/` — data fetch and storage, incl. the tracked
-    registry `universe_cache.json` the nightly loads (never rebuilt nightly; see
-    `source/scripts/refresh_universe.py`)
-  - `source/rocket/telegram_bot/`, `source/rocket/backtest/`, `source/rocket/scan_engine/` — bot, backtests, scans
-  - `source/rocket/scoring/stocktwits.py` — StockTwits social-sentiment fetcher
+  - `source/rocket/data/` — the tracked registry `universe_cache.json` (never rebuilt nightly;
+    see `refresh_universe.py`), batched fetching, the class-share request form
+  - `source/rocket/backtest/` — no-look-ahead indicator evaluation (`indicator_eval.py`)
+    and the walk-forward campaign engines
+  - `source/rocket/dataquality/` — split-adjust (used nightly via `store_io`) and outlier
+    detection; the rest of the package is retired-era
+  - the retired chat-bot-era mass (messaging-bot package, `scan_engine/`, `scan_pro/`,
+    `users/`, `social/`, `data_fetcher/`, era scripts) is **dead code**, inventoried in
+    `.audits/20261023-0705-full-reaudit/d6-design.md`, owned by the hygiene card named in
+    `docs/ARCHITECTURE.md` §9 — not part of the product
   - `source/tests/`, `source/requirements.txt` — tests, pins
 - `docs/ARCHITECTURE.md` — architecture of the shipped product (modules, pipeline, hosting contract)
