@@ -151,6 +151,8 @@ hosting alias can never expose engine source:
     `_score_from_summary`) and a local Dash UI (engine UI, not served); `source/server.py`
     is a legacy local-render entry, likewise not served
   - `source/rocket/scoring/` — the Rocket score (`rocket_score.py`, weighting, risk, confidence)
+  - `source/rocket/social/` — **LIVE** scoring input: `source/rocket/scoring/rocket_score.py:44`
+    imports `..social.sentiment`; the social score feeds every nightly Rocket score
   - `source/rocket/technical/` — the 34 indicator implementations
   - `source/rocket/data/` — the tracked registry `universe_cache.json` (never rebuilt nightly;
     see `refresh_universe.py`), batched fetching, the class-share request form
@@ -159,7 +161,7 @@ hosting alias can never expose engine source:
   - `source/rocket/dataquality/` — split-adjust (used nightly via `store_io`) and outlier
     detection; the rest of the package is retired-era
   - the retired chat-bot-era mass (messaging-bot package, `scan_engine/`, `scan_pro/`,
-    `users/`, `social/`, `data_fetcher/`, era scripts) is **dead code**, inventoried in
+    `users/`, `data_fetcher/`, era scripts) is **dead code**, inventoried in
     `.audits/20261023-0705-full-reaudit/d6-design.md`, owned by the hygiene card named in
     `docs/ARCHITECTURE.md` §9 — not part of the product
   - `source/tests/`, `source/requirements.txt` — tests, pins
