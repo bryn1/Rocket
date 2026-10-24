@@ -5,7 +5,9 @@ Pipeline:
   2. Convert indicator results → IndicatorVotes
   3. Compute family consensus → DirectionResult
   4. Compute confidence from family agreement + signal strength
-  5. Compute risk from ATR + Bollinger squeeze + volume anomaly
+  5. Compute the risk multiplier from the Bollinger squeeze ONLY — the ATR and
+     volume-anomaly factors never fired (their reads were dead, deleted
+     MC #11198), so this path's multiplier lives in [0.865, 0.985], never [0.5, 1.0]
   6. Apply regime multiplier
   7. Final score = direction × confidence × risk_multiplier × regime_multiplier
   8. Apply hysteresis thresholds
@@ -138,7 +140,7 @@ class RocketSignal:
     final_score: float  # -1.0 → +1.0 (direction × confidence × risk × regime)
     direction_score: float  # 0.0 → 1.0 (raw direction from family consensus)
     confidence: float  # 0.0 → 1.0
-    risk_multiplier: float  # 0.5 → 1.0
+    risk_multiplier: float  # squeeze-driven on this path: 0.865 → 0.985
     regime_multiplier: float  # 0.5 → 1.0
     signal: SignalStrength
     strength: str
@@ -253,38 +255,30 @@ def compute_rocket_score(
     )
 
     # ─── Step 5: Risk ───
-    # Extract ATR and Bollinger values from results
-    atr_val = 0.0
+    # Extract the Bollinger squeeze from results. The ATR and volume reads
+    # were DEAD and are deleted (MC #11198): ATR emitted its values as name
+    # "ATR" with score=0 literal (technical/volatility.py), so atr_val could
+    # only ever re-read that 0; the volume read looked for name
+    # "VWAPIndicator" + key "volume_ratio", but VWAP emitted name "VWAP" with
+    # keys {vwap, price} (technical/volume.py), so it never matched. The
+    # multiplier is therefore squeeze-driven only: atr_pct stays 0.0 and
+    # volume_ratio stays 1.0 exactly as they always did on this path.
     bb_upper = bb_lower = bb_sma = 0.0
-    vol_ratio = 1.0
 
     for r in results:
         name = r.name if hasattr(r, 'name') else r.get('name', '')
         vals = r.values if hasattr(r, 'values') else r.get('values', {})
-        if name == "ATR":
-            atr_val = r.score if hasattr(r, 'score') else r.get('score', 0.0)
-        elif name in ("BollingerBands", "Bollinger Bands"):
+        if name in ("BollingerBands", "Bollinger Bands"):
             bb_upper = vals.get('upper', 0.0) or vals.get('upper_band', 0.0)
             bb_lower = vals.get('lower', 0.0) or vals.get('lower_band', 0.0)
             bb_sma = vals.get('sma', 0.0)
-        elif name == "VWAPIndicator":
-            # Volume info from VWAP indicator
-            vol_data = vals.get('volume_ratio', None)
-            if vol_data is not None:
-                vol_ratio = vol_data
 
-    # Calculate ATR% and Bollinger squeeze
-    atr_pct = (atr_val / current_price * 100) if current_price > 0 else 0.0
     bb_squeeze = (bb_upper - bb_lower) / bb_sma if bb_sma > 0 else 0.05
 
-    # Volume anomaly
-    if vol_ratio == 1.0:
-        vol_ratio = 1.0  # default if no data
-
     risk = compute_risk(
-        atr_pct=atr_pct,
+        atr_pct=0.0,
         bb_squeeze=bb_squeeze,
-        volume_ratio=vol_ratio,
+        volume_ratio=1.0,
     )
 
     # ─── Step 6: Regime ───
