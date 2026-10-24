@@ -154,7 +154,9 @@ efter merge är E4 (orchestrator) — utförd (LEDGER 2026-10-08, "unit re-insta
 - `.tmp/run_manifest.json` — kör-manifest (partition, per-region datum, timings); **ej
   committad**, scratch.
 - Legacy-sidor som **serveras men saknar generator i repo** (`indicators.html`,
-  `portfolio.html`, `region-top25.html`): **behålls** — deras URL:er är live; se §8.3.
+  `portfolio.html`, `region-top25.html` — för den sistnämnda finns numera ett
+  Score-kolumns-regen-skript i repo, se §8.3, men ingen hel sidogenerator):
+  **behålls** — deras URL:er är live; se §8.3.
 
 ## 7. Hosting-kontrakt
 
@@ -180,14 +182,24 @@ efter merge är E4 (orchestrator) — utförd (LEDGER 2026-10-08, "unit re-insta
    importerar den inte själv) — men Dash-UI:t väntar fortfarande
    på samma omvandlare i sin egen väg. Follow-up-kort.
 3. **Frozen snapshots:** `region-top25.html` + `top25.json` (samt `portfolio.html`) har
-   ingen generator i repo och uppdateras inte — serveras som orörda snapshots.
-   `region-top25.html`:s ärliga läge (re-auditin d7 + correcting 2026-10-23): sidan är
-   nav-länkad och live-serverad men **Score-kolumnen är död** — alla 346 rader visar
-   inbakat 0.00; `top25.json` är INTE dess Score-källa (0 ticker-overlap, dess globala
-   top-25 är en annan epok). **Ägarbeslut väntar för Score-kolumnen:** (a) pensionera,
-   (b) restore hosting-mirror 9809e97 (Sep-30 real-score-epok), eller (c) regenerera från
-   live-storen efter nattlig återställning. `lang="sv"` är fixat (a934aa1, MC 11188);
-   kort 11188 står öppet för Score-kolumnen.
+   ingen hel generator i repo och uppdateras inte — serveras som orörda snapshots
+   (`region-top25.html`:s Score-kolumn har dock en regen-skript, se nedan).
+   `region-top25.html`:s läge (re-auditin d7 + correcting 2026-10-23; LÖST av
+   ägarbeslut "1c" 2026-10-24, MC 11188): sidan är nav-länkad och live-serverad;
+   **Score-kolumnen regenererades 2026-10-24 från same-epoch `index.html`
+   (epok 031b975)** med `source/scripts/regen_top25_scores.py` — 346 celler om­skrivna
+   till visad precision, 309 med riktig poäng; 37 tickers utanför dagens scoreade
+   mängd visar – och är listade i noten "Ej scoreade i dagens körr" under
+   tabellerna — aldrig fake 0.00. Sidans egen provenance (header-raden och
+   p-metat) ägs nu av samma skript och nämnar **båda epokerna**: Score =
+   `index.html` 031b975 (2026-10-24); Price/Last date = 2026-09-08-snapshot
+   — fryst, priserna följer INTE med regen (per-row-datumet är price-datum;
+   en omskrivning till score-epoken skulle fake:a en kvot). De gamla
+   claimen (`10300 scored`, parquet-sökvägen) greppas noll.
+   Kolumnen hålls aktuell genom att köra om skriptet
+   efter publicering (ingen nightly-timer — sidan förblir en snapshot).
+   `top25.json` var och förblir INTE dess Score-källa (0 ticker-overlap, annan epok).
+   `lang="sv"` är fixat (a934aa1).
 4. **Snapshot-mekanik (accepterade residualer, DESIGN §13.8):** färskhetsbannern visar
    globalmax av stabila bars — en ensam efterbliven marknad syns inte (per-region-datum i
    run-manifestet är instrumentet); veckodagsregeln har ingen helgedagskalender (den

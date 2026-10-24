@@ -131,8 +131,10 @@ hosting alias can never expose engine source:
 - Served pages (all live at https://sibbamala.com/rocket/): `index.html` (the read-only demo),
   `indicators.html` (methodology), `portfolio.html`, `region-top25.html`, `top25.json` (the
   last three are frozen legacy snapshots kept live — see `docs/ARCHITECTURE.md` §8;
-  `region-top25.html`'s Score column is dead — every row renders 0.00 — owner ruling
-  pending, MC 11188 open)
+  `region-top25.html`'s Score column was REGENERATED 2026-10-24 from the same-epoch
+  published `index.html` — owner ruling "1c", MC 11188 — by
+  `source/scripts/regen_top25_scores.py`; tickers absent from the scored set render –,
+  never a fake 0.00)
 - `indicator_stats.json` — per-indicator backtest evidence, written and committed by the
   nightly generator but **not served** (the page embeds it; the hosting contract serves
   exactly the five pages above)
