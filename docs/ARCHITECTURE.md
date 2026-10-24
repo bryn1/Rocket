@@ -216,12 +216,19 @@ garantier mot återfall (§2-golven). Resten av den gamla visionen förblir bort
 10-år historik (storen håller ~1 år), chattbot-dagsrecs, options-/social-scaling, autotrading.
 `universe_builder.py` lever vidare **bakom** `refresh_universe`-garden (aldrig nattligen).
 Chattbot-ärans död kod rederas nu batchvis av ett separat hygien-kort (MC 11199):
-batch B1 (2026-10-24) raderade de sju scripten i `scripts/`; `daily_scoring.py` m.fl.
-återstår, överkopplade och ägs av samma kort — de tas bort av dess påföljande batch.
+batch B1 (2026-10-24) raderade de sju scripten i `scripts/`, B2 bot-/Scan-Pro-klustret
+och B3 (2026-10-24) dag-cron-kedjan i `rocket/` (7 filer: signalkedjans cron-orphans —
+scoring, scan-cron, signalgenerator, universums-DB, portföljkoll och chattbot-ärans
+gamla nattskanner). Namnkollisionen till trots: den raderade nattskannern är
+INTE den levande produkten — nightly-pipelinen `rocket-demo-publish`
+(`source/scripts/generate_demo_page.py`) är opåverkad och finns kvar som trädets enda
+timerpar (MC 11200). Kvarvarande död kod (scoring-slirar, det gamla fetch-klustret,
+utils/backtest-strays) tas av samma korts påföljande batcher (B4–B6).
 
 ---
 
-*Uppdaterad: 2026-10-24 (MC 11199 batch B1: chattbot-era-scripten i `scripts/` och de
+*Uppdaterad: 2026-10-24 (MC 11199 batch B3: dag-cron-kedjan i `rocket/` raderad (7 filer),
+§9 i samma commit; ruff.toml-per-fil-ignores följer med. Tidigare samma dag: MC 11199 batch B1: chattbot-era-scripten i `scripts/` och de
 fyra vilande systemd-enheterna raderade; §9 omskriven. Tidigare samma dag: MC 11200 docs
 de-stale: fix-wave-guarderna (ceil-golv, tecken-gate,
 escape, store-lås, read-only dry-run) in skrivna; cutover-status uppdaterad (stängd 2026-10-17,
