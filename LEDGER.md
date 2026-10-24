@@ -52,3 +52,4 @@ STATUS: OPEN (board closure of MC 10227 = orchestrator bookkeeping) — MC 10220
 
 - MC 11198 (risk-multiplier dead reads deleted; score-neutral byte-proven 35/35; squeeze multiplier kept): fix-risk-dead 61002f5, landing merge 2026-10-24 (orchestrator ledger law — child deferred this line per brief).
 - MC 11233 (rider: README dead-list falsely named LIVE social/; corrected + LIVE bullet w/ rocket_score.py:44): doc-social-rider fc8f778, landing merge 2026-10-24 (orchestrator ledger law).
+- MC 11245 (dead-code batch B1: 7 chat-bot-era scripts + 4 stale systemd units, 1841 L deleted; F1 test re-pointed in-commit; suite 702p/6s/0f @ load 2.45; nightly-parity dry-run green 10430/10832; path-anchored grep-zero, residues = B2-owned per declared order): batch-B1 bb243c3, landed 2026-10-24 (orchestrator ledger law).
