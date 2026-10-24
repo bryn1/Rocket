@@ -160,9 +160,10 @@ hosting alias can never expose engine source:
     and the walk-forward campaign engines
   - `source/rocket/dataquality/` — split-adjust (used nightly via `store_io`) and outlier
     detection; the rest of the package is retired-era
-  - the retired chat-bot-era mass (messaging-bot package, `scan_engine/`, `scan_pro/`,
-    `users/`, `data_fetcher/`, era scripts) is **dead code**, inventoried in
+  - the remaining retired-era mass (`data_fetcher/`, the daily-cron chain, the dead scoring
+    slivers, util strays) is **dead code**, inventoried in
     `.audits/20261023-0705-full-reaudit/d6-design.md`, owned by the hygiene card named in
-    `docs/ARCHITECTURE.md` §9 — not part of the product
+    `docs/ARCHITECTURE.md` §9 — not part of the product; the chat-bot-era messaging, scan and
+    user-store packages plus the era scripts were deleted 2026-10-24 (MC 11199 batches B1–B2)
   - `source/tests/`, `source/requirements.txt` — tests, pins
 - `docs/ARCHITECTURE.md` — architecture of the shipped product (modules, pipeline, hosting contract)
