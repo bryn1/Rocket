@@ -7,12 +7,13 @@ The live product has exactly ONE scheduled unit pair — `rocket-demo-publish.ti
 deploy host's `~/.config/systemd/user/` (checked 2026-10-24, MC 11200: the only Rocket
 units installed there are this pair).
 
-> **Do NOT install the other unit files in this directory.** `daily-scan.service/.timer`
-> and `portfolio-check.service/.timer` belong to the retired chat-bot-era product: their
-> `ExecStart` paths point at a host layout that no longer exists and at scripts no
-> longer in the live pipeline. They are dead files pending the hygiene card owned by
-> `docs/ARCHITECTURE.md` §9; a host rebuilt from them would run two phantom cron
-> services of a retired product. They are NOT installed anywhere on the deploy host.
+> The four retired chat-bot-era units `daily-scan.service/.timer` and
+> `portfolio-check.service/.timer` were deleted from this directory by the hygiene
+> card (MC 11199 batch B1, 2026-10-24): their `ExecStart` paths pointed at a host
+> layout that no longer exists and at scripts retired with them, so a host rebuilt
+> from them would have run two phantom cron services of a retired product. They
+> were NOT installed anywhere on the deploy host (checked 2026-10-24, MC 11200).
+> Nothing else lives in this directory: `rocket-demo-publish` is the only unit pair.
 
 ## rocket-demo-publish — the ONE nightly publish pipeline
 

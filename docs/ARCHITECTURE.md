@@ -215,13 +215,15 @@ universumdelen av september-produkten** — full täckning på dagens layout, da
 garantier mot återfall (§2-golven). Resten av den gamla visionen förblir bortvald:
 10-år historik (storen håller ~1 år), chattbot-dagsrecs, options-/social-scaling, autotrading.
 `universe_builder.py` lever vidare **bakom** `refresh_universe`-garden (aldrig nattligen).
-Chattbot-ärans död kod (`scanall.py`, `scan_batch.py`, `split_universe.py`,
-`aggregate_results.py`, `night_scan.sh`, `daily_push.py`, `daily_scoring.py` m.fl.) är
-overkoplade och ägs av ett separat hygien-kort — de tas inte bort här.
+Chattbot-ärans död kod rederas nu batchvis av ett separat hygien-kort (MC 11199):
+batch B1 (2026-10-24) raderade de sju scripten i `scripts/`; `daily_scoring.py` m.fl.
+återstår, överkopplade och ägs av samma kort — de tas bort av dess påföljande batch.
 
 ---
 
-*Uppdaterad: 2026-10-24 (MC 11200 docs de-stale: fix-wave-guarderna (ceil-golv, tecken-gate,
+*Uppdaterad: 2026-10-24 (MC 11199 batch B1: chattbot-era-scripten i `scripts/` och de
+fyra vilande systemd-enheterna raderade; §9 omskriven. Tidigare samma dag: MC 11200 docs
+de-stale: fix-wave-guarderna (ceil-golv, tecken-gate,
 escape, store-lås, read-only dry-run) in skrivna; cutover-status uppdaterad (stängd 2026-10-17,
 90e55f3); volatila antal utflyttade till LEDGER.md). Sanning prövas mot trädet: om
 en uppräkning i denna fil motsägs av koden, är dokumentet fel — fixa dokumentet, inte
