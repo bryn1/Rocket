@@ -1,44 +1,18 @@
 # Rocket Stock Scanner - Systemd Services
 
-## Setup
+## The ONLY live pair: rocket-demo-publish.timer + .service
 
-Copy the service and timer files to the systemd user directory:
+The live product has exactly ONE scheduled unit pair — `rocket-demo-publish.timer` +
+`rocket-demo-publish.service`. Installed, enabled and verified as user units on the
+deploy host's `~/.config/systemd/user/` (checked 2026-10-24, MC 11200: the only Rocket
+units installed there are this pair).
 
-```bash
-cp daily-scan.service ~/.config/systemd/user/
-cp daily-scan.timer ~/.config/systemd/user/
-cp portfolio-check.service ~/.config/systemd/user/
-cp portfolio-check.timer ~/.config/systemd/user/
-```
-
-## Enable
-
-```bash
-systemctl --user enable daily-scan.timer
-systemctl --user enable portfolio-check.timer
-systemctl --user start daily-scan.timer
-systemctl --user start portfolio-check.timer
-```
-
-## Schedule
-
-- **daily-scan**: Runs at 22:00 every night
-- **portfolio-check**: Runs every 5 minutes
-
-## Logs
-
-```bash
-journalctl --user -u daily-scan.service
-journalctl --user -u portfolio-check.service
-systemctl --user list-timers daily-scan.timer portfolio-check.timer
-```
-
-## Manual Run
-
-```bash
-systemctl --user start daily-scan.service
-systemctl --user start portfolio-check.service
-```
+> **Do NOT install the other unit files in this directory.** `daily-scan.service/.timer`
+> and `portfolio-check.service/.timer` belong to the retired chat-bot-era product: their
+> `ExecStart` paths point at a host layout that no longer exists and at scripts no
+> longer in the live pipeline. They are dead files pending the hygiene card owned by
+> `docs/ARCHITECTURE.md` §9; a host rebuilt from them would run two phantom cron
+> services of a retired product. They are NOT installed anywhere on the deploy host.
 
 ## rocket-demo-publish — the ONE nightly publish pipeline
 
@@ -65,15 +39,20 @@ rocket-demo-publish.service (Type=oneshot, TimeoutStartSec=10800 — full-univer
       │                      re-derived MC 10220; the 35-era 1800 would kill the full pass)
       ▼
 source/scripts/generate_demo_page.py
-      ├─ loads the tracked registry (full_universe; floors fire BEFORE any network)
-      │  — the FULL universe (~12.8k unique tickers / 15 regions) — then batched
+      ├─ entry flock on .demo-publish.lock (store root): a second concurrent run is
+      │  refused loudly with zero writes (MC 11187); --dry-run is READ-ONLY vs the store
+      ├─ loads the tracked registry (full_universe; charset gate + floors fire BEFORE any
+      │  network) — the FULL universe (counts move only via refresh_universe.py; the
+      │  current registry epoch is recorded, dated, in LEDGER.md) — then batched
       │  delta/backfill OHLCV fetch through the store (store_io + bulk_fetcher)
       ├─ scores all 34 registered indicators per ticker (score_all, Pool(8))
-      ├─ redraws the Indikatorer stats WEEKLY (Saturday): deterministic 500-ticker
-      │  stratified sample via sample_backtest (Pool(12)); other days the committed
-      │  indicator_stats.json is carried with an explicit cadence note (not a failure)
-      └─ fail-closed guard: renders to string first; unless the page passes ALL checks
-         (registry floors + scored floor max(2500, 0.40×registry) + per-region coverage
+      ├─ redraws the Indikatorer stats WEEKLY (Saturday): deterministic stratified
+      │  sample of up to 500 tickers via sample_backtest (Pool(12)); other days the
+      │  committed indicator_stats.json is carried with an explicit cadence note
+      │  (not a failure)
+      └─ fail-closed guard: renders to string first (every dynamic string HTML-escaped);
+         unless the page passes ALL checks (registry floors + scored floor
+         max(2 500, ceil(0.40 × registry)) + per-region coverage ≥ ceil(0.5 × members)
          + closed partition + markers for every tab + page ceiling + settled bars) it
          exits 1 WITHOUT writing or committing — the last good page stays live everywhere
       ▼
@@ -81,6 +60,14 @@ commits index.html + indicator_stats.json (exactly these two paths, nothing else
       ▼
 pushes to bryn1 main (the generator does the git plumbing itself)
 ```
+
+### Publishing coupling (documented here since MC 11200 — it can silently freeze the product)
+
+The publish step refuses to run while the **deploy tree** carries foreign commits ahead
+of `bryn1/main` (journal: `FAIL-CLOSED — lokala commits före bryn1/main …`). Checking out
+a card branch in the deploy checkout therefore stops nightly publishes until the branch
+is landed/merged and the tree sits at the `bryn1/main` tip again — every stalled night is
+a stale public page.
 
 ### Carry-forward rule
 
