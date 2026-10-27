@@ -34,13 +34,25 @@ class RegimeResult:
     factors: list[str] = field(default_factory=list)
 
 
-# Regional index mapping
+# Regional index mapping. D1 (MC 11545, B0): this map IS the whole coverage —
+# the four regions above get real regime state from the nightly index CSVs
+# (scripts/fetch_indices.py); the registry's 11 uncovered regions have no
+# index, and index_for_region below is the ONE resolution point: an unmapped
+# region resolves to None — NEVER a "^GSPC" default — so callers pass
+# index_df=None and the insufficient-data guard below keeps the honest
+# CHOP × 0.5 fallback (named + tested in tests/test_fetch_indices.py).
 REGION_INDEX = {
     "usa": "^GSPC",        # S&P 500
     "sweden": "^OMXS30",   # OMX Stockholm 30
     "china": "000001.SS",  # Shanghai Composite
     "india": "^NSEI",      # NIFTY 50
 }
+
+
+def index_for_region(region: str) -> str | None:
+    """Region -> its index ticker, or None when the region has no mapping
+    (the D1 honest fallback: None -> no index_df -> CHOP × 0.5 stands)."""
+    return REGION_INDEX.get(region)
 
 
 def detect_regime(

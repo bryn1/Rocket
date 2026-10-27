@@ -162,7 +162,9 @@ def test_main_writes_flag_follows_dry_run(tmp_path, monkeypatch):
     gen.main()
     monkeypatch.setattr(sys, "argv", ["gen", "--skip-fetch"])
     gen.main()
-    assert seen == [False, True]              # dry READ-ONLY, real writes
+    # B0 (MC 11545): stage 1 makes TWO seam calls per run — bar walk first,
+    # index feed second; both follow the same dry/real flag.
+    assert seen == [False, False, True, True]  # dry READ-ONLY, real writes
 
 
 # ── (b) publisher flock: held by another process ⇒ refuse, zero writes ─────
