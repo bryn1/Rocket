@@ -331,7 +331,15 @@ def compute_rocket_score(
     if social_enabled:
         try:
             ticker_symbols = [ticker_info.ticker.split('.')[0] if '.' in ticker_info.ticker else ticker_info.ticker]
-            sentiment_map = get_social_sentiment(ticker_symbols)
+            # B1 timeout plumbing (MC 11546): pass social_timeout through ONLY
+            # when supplied — a None must never reach httpx (C2); callers that
+            # pass none keep the library default 30.0 unchanged.
+            social_timeout = kwargs.get('social_timeout')
+            if social_timeout is not None:
+                sentiment_map = get_social_sentiment(ticker_symbols,
+                                                     social_timeout=social_timeout)
+            else:
+                sentiment_map = get_social_sentiment(ticker_symbols)
             if ticker_symbols[0] in sentiment_map:
                 ss = sentiment_map[ticker_symbols[0]]
                 social_score = get_social_score(ss)  # -1.0 to +1.0
