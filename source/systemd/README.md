@@ -36,10 +36,12 @@ systemctl --user enable --now rocket-demo-publish.timer
 rocket-demo-publish.timer   (user unit, OnCalendar 05:00 UTC, Persistent=true →
       │                      runs catch up after downtime)
       ▼
-rocket-demo-publish.service (Type=oneshot, TimeoutStartSec=10800 — full-universe nightly,
+rocket-demo-publish.service (Type=oneshot, TimeoutStartSec=14400 — full-universe nightly,
       │                      re-derived MC 10220; the 35-era 1800 would kill the full pass.
-      │                      Owner ruling D4 (MC 11474): raise to 14400 (4 h) — the repo
-      │                      edit of TimeoutStartSec + host re-install ride the B4 card.)
+      │                      Owner ruling D4 (MC 11474): 10800 → 14400 (4 h) RAISED by the
+      │                      B4 card (this repo edit); the host re-install read-back leg
+      │                      (systemctl --user show … -p TimeoutStartUSec = 14400s) is the
+      │                      orchestrator's named post-land step.)
       ▼
 source/scripts/generate_demo_page.py
       ├─ entry flock on .demo-publish.lock (store root): a second concurrent run is

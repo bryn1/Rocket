@@ -6,8 +6,10 @@ Type=oneshot
 # Full-universe nightly, re-derived MC 10220 (DESIGN §6): Saturday worst ≈ 97 min
 # (fetch 17×3 Yahoo-slow + scoring + weekly sample backtest + render/publish),
 # weekday ≈ 72 → 10800 s = 1.86× worst headroom. The old 1800 (35-ticker era,
-# MC 3874) would kill the full pass mid-fetch.
-TimeoutStartSec=10800
+# MC 3874) would kill the full pass mid-fetch. Owner ruling D4 (MC 11474,
+# raised BY B4): 10800 → 14400 s (4 h) — wired two-pass nightly budget
+# (PLAN-c3 §5) ≈ 1,150–1,450 s weekday, ≈500 s worst throttled-fetch slack.
+TimeoutStartSec=14400
 WorkingDirectory=/home/svarkor/Rocket
 ExecStart=/usr/bin/python3 /home/svarkor/Rocket/source/scripts/generate_demo_page.py
 # The generator commits index.html and pushes to bryn1 main itself.
