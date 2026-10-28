@@ -1,6 +1,6 @@
 """Market regime detection — classify market as BULL, BEAR, or CHOP.
 
-Uses regional index data (SPY, OMXS30, SHCOMP, NIFTY) to determine
+Uses regional index data (SPY, OMXSPI, SHCOMP, NIFTY) to determine
 the broader market context. This affects all signals via a multiplier.
 
 Architecture:
@@ -41,9 +41,16 @@ class RegimeResult:
 # region resolves to None — NEVER a "^GSPC" default — so callers pass
 # index_df=None and the insufficient-data guard below keeps the honest
 # CHOP × 0.5 fallback (named + tested in tests/test_fetch_indices.py).
+# D5 (MC 11579, owner ruling 2026-10-28) proxy-semantics law: sweden reads
+# ^OMXSPI, the OMX Stockholm ALL-SHARE — a whole-exchange proxy for the
+# Swedish market regime, NOT the top-30 blue-chip index this map once named
+# (Yahoo serves that symbol quote-only — 1 bar, no daily history; root-cause
+# probe .audits/202610272245-wirebuild/out/, MC 11571). The broad All-Share
+# is the only Yahoo-served full Swedish daily series, so the multiplier
+# answers "what is the Swedish MARKET doing": disclosed per D5, not smuggled.
 REGION_INDEX = {
     "usa": "^GSPC",        # S&P 500
-    "sweden": "^OMXS30",   # OMX Stockholm 30
+    "sweden": "^OMXSPI",   # OMX Stockholm All-Share (whole-exchange proxy)
     "china": "000001.SS",  # Shanghai Composite
     "india": "^NSEI",      # NIFTY 50
 }

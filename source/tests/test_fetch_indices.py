@@ -132,3 +132,13 @@ def test_refetch_is_idempotent(tmp_path, monkeypatch):
     assert len(first) == len(REGION_INDEX)
     _fetch(tmp_path, monkeypatch)                    # same frames again
     assert {p.name: p.read_bytes() for p in tmp_path.iterdir()} == first
+
+
+def test_d5_sweden_maps_to_omxspi_all_share():
+    # D5 NAMED guard (MC 11579, owner ruling 2026-10-28): the Swedish regime
+    # feed is the OMX Stockholm ALL-SHARE — the only Yahoo-served full daily
+    # Swedish series (the top-30 symbol this map once named is quote-only:
+    # 1 bar, root cause MC 11571). Proxy semantics are law, disclosed in
+    # regime.py: whole-exchange, not top-30. If the entry drifts back, RED.
+    assert REGION_INDEX["sweden"] == "^OMXSPI"
+    assert index_for_region("sweden") == "^OMXSPI"
