@@ -14,15 +14,18 @@ from rocket.social.models import (
     SentimentScore,
     TickerSentiment,
 )
-def scrape_r_wallstreetbets(limit: int = 25) -> list[PostData]:
+def scrape_r_wallstreetbets(limit: int = 25,
+                             social_timeout: float = 30.0) -> list[PostData]:
     """Scrape top posts from r/wallstreetbets using web_extract (Firecrawl).
-    
+
     Uses AltIndex as a reliable WSB tracker since direct Reddit scraping is blocked.
     Note: This function should be called from main thread where web_extract is available.
-    
+
     Args:
         limit: Number of top posts to scrape
-        
+        social_timeout: httpx per-call timeout in seconds (MC 11546 B1; default
+            30.0 preserves the pre-B1 behaviour for every existing caller)
+
     Returns:
         List of PostData objects with scraped content
     """
@@ -40,7 +43,7 @@ def scrape_r_wallstreetbets(limit: int = 25) -> list[PostData]:
                 'urls': [url],
                 'formats': ['markdown'],
             },
-            timeout=30.0
+            timeout=social_timeout
         )
 
         if response.status_code != 200:
@@ -242,17 +245,20 @@ def analyze_ticker_sentiment(posts: list[PostData]) -> dict[str, TickerSentiment
     return result
 
 
-def get_social_sentiment(tickers: list[str]) -> dict[str, SentimentScore]:
+def get_social_sentiment(tickers: list[str],
+                         social_timeout: float = 30.0) -> dict[str, SentimentScore]:
     """Get social sentiment for a list of tickers from WSB.
     
     Args:
         tickers: List of ticker symbols to analyze
+        social_timeout: httpx per-call timeout in seconds passed to the scrape
+            (MC 11546 B1; default 30.0 preserves the pre-B1 behaviour)
         
     Returns:
         Dictionary mapping tickers to their social sentiment data
     """
     # Scrape WSB posts
-    posts = scrape_r_wallstreetbets(limit=50)
+    posts = scrape_r_wallstreetbets(limit=50, social_timeout=social_timeout)
 
     # Analyze sentiment for all mentioned tickers
     all_sentiments = analyze_ticker_sentiment(posts)
