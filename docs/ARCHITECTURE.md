@@ -34,7 +34,7 @@ registret"). Värd: **https://sibbamala.com/rocket/** (statisk nginx under alias
 
 ```
 rocket-demo-publish.timer  (systemd user-unit, OnCalendar 05:00:00 UTC, källa source/systemd/)
- └─ rocket-demo-publish.service  (TimeoutStartSec=10800 — omräknat för hel-universum, MC 10220)
+ └─ rocket-demo-publish.service  (TimeoutStartSec=14400 — hel-universum + wired two-pass, D4 MC 11474; tidigare 10800 MC 10220)
      └─ source/scripts/generate_demo_page.py
          entry-vakt  non-blocking flock på .demo-publish.lock (store-root): en andra
                      körning vägras högljutt, exit 1, zero writes (MC 11187);
@@ -136,8 +136,8 @@ vara `m_unique` och `not_fetched` måste vara 0 (undantaget `--skip-fetch`).
 ## 5. Schemaläggning
 
 `rocket-demo-publish.timer` — **systemd user-unit**, `OnCalendar=*-*-* 05:00:00 UTC`,
-`Persistent=true`; unit-filerna versioneras i `source/systemd/`. `TimeoutStartSec=10800`
-(3 h) härlett i DESIGN §6 ur mätta fetch-/score-hastigheter (weekdag ≈ 72 min, lördag
+`Persistent=true`; unit-filerna versioneras i `source/systemd/`. `TimeoutStartSec=14400`
+(4 h; upphöjt från 10800 enl. ownerbeslut D4, MC 11474 — budget för den wired two-pass-natten, PLAN-c3 §5; 10800 gällde 2026-10-08–2026-10-28) härlett i DESIGN §6 ur mätta fetch-/score-hastigheter (weekdag ≈ 72 min, lördag
 inkl. veckobacktest ≈ 97 min — härlett; fullskaliga nattkörningar har körts sedan
 cutovern stängdes — första fullskaliga publiceringen 90e55f3, 2026-10-17).
 Historik: installation och aktivering verifierades under 35-eran (nattkörning 2026-10-01
