@@ -46,6 +46,7 @@ import demo_publish  # noqa: E402
 import demo_render  # noqa: E402
 import excluded_tickers  # noqa: E402
 from fetch_store import run_fetch as fetch_store  # stage 1; test seam name
+from fetch_indices import run as fetch_indices  # B0 (MC 11545); seam-passed
 
 INDEX_PATH = REPO_ROOT / "index.html"
 STATS_PATH = REPO_ROOT / "indicator_stats.json"
@@ -327,6 +328,14 @@ def main() -> None:
     fetch_facts = fetch_store(plan, skip_fetch=args.skip_fetch,
                               now_fn=now_fn, errors=errors, stats=fetch_stats,
                               writes_enabled=not args.dry_run)  # (c): dry = READ-ONLY
+    # B0 (MC 11545, C1): regime index feed — walk the <=4 REGION_INDEX CSVs
+    # through the SAME stage-1 seam right after the bar walk (fetch_fn passed
+    # by reference, so the suite's fetch_store patch covers it). Inert
+    # pre-B2: nothing supplies index_df until the wire commit. The throwaway
+    # stats dict satisfies the out-param contract without touching the bar
+    # walk's fetch_stats journal (the walk stays loud on its own stderr).
+    fetch_indices(fetch_store, skip_fetch=args.skip_fetch, now_fn=now_fn,
+                  errors=errors, stats={}, writes_enabled=not args.dry_run)
     timings["fetch"] = time.monotonic() - t
     if fetch_stats:                          # stderr journal, STARVED-style;
         tc = fetch_stats["typed_counts"]     # zero guard/accounting change
