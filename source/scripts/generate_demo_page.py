@@ -168,9 +168,12 @@ def build_accounting(plan, scored: dict, fetch_facts: dict):
 # ── stage 5: fail-closed guards (DESIGN §9) ─────────────────────────────────
 
 def _markers(plan) -> list[str]:
-    """Generated from UniversePlan.order — NEVER a literal region list."""
+    """Generated from UniversePlan.order — NEVER a literal region list.
+    The v2 marker (MC 11474 B3) is guard-pinned beside the tab markers: its
+    absence on the rendered bytes fails §5 fail-closed."""
     return ([demo_render.BANNER_MARKER, demo_render.TAB_ALL_MARKER,
-             demo_render.INDICATOR_TAB_MARKER, demo_render.PANEL_ALL_MARKER]
+             demo_render.INDICATOR_TAB_MARKER, demo_render.PANEL_ALL_MARKER,
+             demo_render.SCORE_V2_MARKER]
             + [f'{demo_render.PANEL_PREFIX}{r}"' for r in plan.order])
 
 

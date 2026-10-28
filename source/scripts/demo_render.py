@@ -23,6 +23,17 @@ TAB_ALL_MARKER = 'id="tab-all"'
 INDICATOR_TAB_MARKER = 'id="tab-indicators"'
 PANEL_PREFIX = 'id="panel-'
 PANEL_ALL_MARKER = 'id="panel-all"'
+# v2 header marker (MC 11474 B3, PLAN-c3 §4): guard-pinned — a page without
+# it cannot publish (test_v2_marker_guard.py proves the guard goes RED).
+SCORE_V2_MARKER = 'id="score-v2"'
+SCORE_V2_TEXT = ("Rocket-score v2 — konfidens, risk och regime vägs in "
+                 "(från 2026-10-28)")
+# D2 KNOWN LIMIT (DECISIONS.md), stated on the page — not hidden: the gate
+# ships, not the data, until a sentiment service exists on this host.
+KNOWN_LIMIT_TEXT = ("KÄND BEGRÄNSNING: social sentiment körs endast på "
+                    "topp-500 (preliminär score, 2 s tak per anrop) — ingen "
+                    "sentimenttjänst finns på den här värden, därför är "
+                    "social_score 0.0 för alla tills en tjänst levereras.")
 
 EMPTY_BACKTEST_TEXT = "Backtest saknas — publiceras när närmaste löpning lyckats"
 
@@ -322,6 +333,8 @@ def render(plan, results: dict[str, list[dict]], run_ts: str,
 <body><div class="wrap">
 <header class="page"><h1>Rocket — Stock Scanner Demo</h1>
 <div class="{banner_cls}" id="freshness" role="status">Data hämtad {_esc(run_ts)} · Senaste kursdatum: {_esc(last_bar_txt)}</div>
+<div class="sub" id="score-v2">{_esc(SCORE_V2_TEXT)}</div>
+<div class="sub" id="known-limit">{_esc(KNOWN_LIMIT_TEXT)}</div>
 <div class="sub">Läs-only demo · scorerade {n} av {plan.m_unique} tickers i registret · {len(regions)} regioner · scorerade med Rocket-score</div></header>
 <h2>Rankings</h2>
 <div style="margin-bottom:10px"><input type="text" placeholder="Filtrera ticker…" aria-label="Filtrera ticker" oninput="filterTable(this)"> <span id="filter-status" class="region-note" role="status" style="display:inline;margin-left:8px"></span></div>

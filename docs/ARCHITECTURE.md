@@ -55,9 +55,16 @@ rocket-demo-publish.timer  (systemd user-unit, OnCalendar 05:00:00 UTC, källa s
                       gång → annars not_fetched (högljutt, ej tyst död); varje CSV
                       skrivs atomic PER SKRIVARE (mkstemp i samma dir + os.replace — den
                       fasta delade .tmp-filen rev en annan skrivares in-flight temp, MC 11187)
-         2. score     score_all Pool(8) över alla storeade tickers — samma app-seam
-                      som förut (to_indicator_frame + _compute_all_indicators +
-                      _score_from_summary); partition per §4 nedan
+         2. score     score_all Pool(8) över alla storeade tickers — Ön är
+                      scripts/nightly_score.score_row → compute_rocket_score
+                      (34 indikatorer; confidence/risk/regime appliceras på
+                      sidans score, MC 11474 "B"); TVÅ pass (D2): pass 1 alla
+                      social=False, pass 2 preliminära topp-500 (ALLA_CAP)
+                      social=True, adapterns 2 s timeout per anrop; C1: ≤4
+                      REGION_INDEX-CVS:er läses EN gång per körning via
+                      store_io (saknad fil = None = testad CHOP×0.5-fallback)
+                      och följer med varje score_row-anrop; C3-sammanfogning
+                      per ticker FÖRE results/partition; partition per §4 nedan
          3. indikatorer  VECKOVIS (lördag UTC): sample_backtest — deterministiskt
                       stratifierat 500-urval, Pool(12) över indikator-chunkar;
                       andra dagar: carry med ärlig cadence-notis (ej felspråk)
@@ -69,7 +76,9 @@ rocket-demo-publish.timer  (systemd user-unit, OnCalendar 05:00:00 UTC, källa s
                       exakt heltals-CILT, banker's round borttagen: fail-open vid 49.66–
                       49.99 % är omöjligt (MC 11186); G6 per region ≥ ceil(0.5 ×
                       regionens registertotal); partition
-                      sluten och not_fetched == 0; markörer för ALLA flikar; sida
+                      sluten och not_fetched == 0; markörer för ALLA flikar
+                      + v2-poängmarkören `id="score-v2"` (MC 11560 B3 — en
+                      publicerad sida utan den failar guarden); sida
                       ≤ MAX_HTML_BYTES 2 500 000 (M_PAGE_MAX 16 113); stabila-bar-vakt
                       (monoton mot senaste gröna publicering, annars veckodagsregeln) —
                       annars skrivs INGET och gamla sidan står live
@@ -100,14 +109,16 @@ vara `m_unique` och `not_fetched` måste vara 0 (undantaget `--skip-fetch`).
 | `rocket/data/bulk_fetcher.py` | batchad hämtning (`_fetch_batch`, 50/batch) — återanvänds av nightly-fetchen | återanvänd |
 | `scripts/full_universe.py` — ny — MC 10220 | registry-loader: primärregions-tilldelning (frusen prioritet), tab-ordning, tecken-gate (TICKER_RE/REGION_RE — MC 11184), S0-golv, **enda konstant-hemmet** (REGISTRY_MIN, MAX_HTML_BYTES → M_PAGE_MAX 16 113, ALLA_CAP 500), stride-batchning, seam C4 | ny |
 | `scripts/store_io.py` — ny — MC 10220 | **enda skrivaren** till `source/data/raw/`: klassificering, atomic write per skrivare (mkstemp + os.replace, MC 11187), strip av in-progress-bar, split-kontinuitet, partitions-klassificerare | ny |
-| `scripts/score_all.py` — ny — MC 10220 | Pool(8)-scoring över storen, noll ackumulering (685.3-läxan), F9-begränsad journal | ny |
+| `scripts/score_all.py` — ny — MC 10220 | Pool(8)-scoring över storen, noll ackumulering (685.3-läxan), F9-begränsad journal; **två pass (D2) genom ön** + C1-indexladdning EN gång per körning (MC 11474 B2) | ny → tvåpassar-via-ön MC 11474 |
+| `scripts/nightly_score.py` — ny — MC 11474 B1 | adaptern: EN mappningsmyndighet store-frame → `compute_rocket_score`; `social` KRÄVD flagga, `N=2.0 s` timeout, options/fundamentals EXPLICIT OFF (D2/D3 choke point) | ny |
+| `scripts/fetch_indices.py` — ny — MC 11545 B0 | ≤4 `REGION_INDEX`-index-CVS:er i stage 1 (efter `run_fetch`; C1: ägs av B0-hunken i `generate_demo_page.py`) | ny |
 | `scripts/sample_backtest.py` — ny — MC 10220 | veckovis Indikatorer-omritning: deterministiskt 500-stratifierat urval, indikator-chunkar, begränsad merge-assertion | ny |
 | `scripts/refresh_universe.py` — ny — MC 10220 | **enda** sanktionerade registry-uppdateraren (manuellt/orkestrerat, aldrig nattligen): gränsad krymp/växt + namngivna regioner + superset-regel; vägran lämnar filen orörd | ny |
 | `scripts/generate_demo_page.py` | orkestrator **v3** (MC 10223): steg 0–6 ovan, entry-flock (MC 11187), `--dry-run` READ-ONLY mot storen/`--skip-fetch`/`--force-backtest`, run-manifest till `.tmp/` | omarbetad MC 10220 |
-| `scripts/demo_render.py` | rendering **v3**: plan-genererade tabbar, Alla = topp 500, filter F3 (alla paneler), Universe-sektion = regionantal (ej varje ticker), HTML-escape i en `_esc`-samlingspunkt (MC 11184) | omarbetad MC 10220 |
+| `scripts/demo_render.py` | rendering **v3**: plan-genererade tabbar, Alla = topp 500, filter F3 (alla paneler), Universe-sektion = regionantal (ej varje ticker), HTML-escape i en `_esc`-samlingspunkt (MC 11184); **v2-poängmarkör + KÄND BEGRÄNSNING-rad** (social topp-500/2 s, social_score 0.0 tills tjänst shipas) MC 11560 B3 | omarbetad MC 10220 → v2-markör MC 11560 |
 | `scripts/demo_publish.py` — ny — MC 10220 | publiceringsmekanik §6a: sync-före-skriv, self-clear, certifiering på lästa byte, ls-remote-bevis | ny |
 | `scripts/demo_indicators.py` — ny — MC 10220 | vecko-gren: lör.-omritning vs planerat carry vs felet carry + åldertröskel 10 d (STDERR-flagga, blockerar ej) | ny |
-| `app.py` | Dash-seam för scoring; `_REGION_MAP` utökad så **alla** registry-nycklar resolverar (F1) + `_assert_region_map` ropar loud vid inkomplett karta | ändrad MC 10220 |
+| `app.py` | Tun DELEGAT till ön (`rocket_score.INDICATORS`); `_compute_all_indicators`/`_score_from_summary` återanvänder öns registry så det oserviceade Dash-UI:t inte kan bära en avvikande indikatoruppsättning (MC 11474 B2); `_REGION_MAP` resolverar **alla** registry-nycklar (F1) | ändrad MC 10220 → tunn delegat MC 11474 |
 | *(35-ticker-modulen, MC 3874-eran)* | **UTGÅRD** — filen är borttagen (0105874): det hårdkodade 35-ticker-universumet är ersatt av registry-laddaren ovan; G4-testet förbjuder hårdkodade universum och återinförande av modulnamnet | utgången |
 | `app.py`, `server.py` | Dash-dashboard — engine-UI:t, **serveras inte** | levererad |
 
@@ -171,12 +182,21 @@ efter merge är E4 (orchestrator) — utförd (LEDGER 2026-10-08, "unit re-insta
 
 ## 8. Kända begränsningar
 
-1. **Dash-sidan i `app.py` scorear 28/34.** Sex mönsterindikatorer kastar tyst `KeyError`
-   på lowercase-frames. Den nattliga vägen är 34/34 — `to_indicator_frame`-omvandlaren
-   appliceras direkt i `score_all.py`, och i sample-vägen inuti löparen
-   `rocket/backtest/indicator_eval.py` (`run_indicator_eval`; `sample_backtest.py`
-   importerar den inte själv) — men Dash-UI:t väntar fortfarande
-   på samma omvandlare i sin egen väg. Follow-up-kort.
+1. **Nattliga vägen är 34/34 genom ön (MC 11474 B2); Dash-UI:t i `app.py` är
+   28/34 — omvandlaren är öppet follow-up-kort.** Sidans score går genom
+   `scripts/nightly_score.score_row`, som applicerar
+   `to_indicator_frame`-omvandlaren **före** `compute_rocket_score` — med den
+   omvandlaren scorear alla **34** registrerade indikatorer felen (VERIFIED
+   mot en riktig store-frame: 34/34, noll `KeyError`). Samma omvandlare
+   appliceras i sample-vägen inuti löparen `rocket/backtest/indicator_eval.py`
+   (`run_indicator_eval`; `sample_backtest.py` importerar den inte själv). Det
+   oserviceade Dash-UI:t i `app.py` är nu en tunn delegat till öns registry,
+   men i sin EGEN väg körs indikatorerna fortfarande på okonverterade
+   lowercase-frames — då kastar de sex mönsterindikatorerna (`DoubleTopBottom`,
+   `HeadShoulders`, `WedgePattern`, `AutoFractal`, `CupAndHandle`,
+   `PatternDetectorCombined`) `KeyError` (VERIFIED: 28/34 på raw-lowercase).
+   Dash-UI:t serveras inte och påverkar inte sidans publicerade score; att
+   applicera omvandlaren i dess egen path är ett öppet follow-up-kort.
 2. **Frozen snapshots:** `region-top25.html` + `top25.json` (samt `portfolio.html`) har
    ingen hel generator i repo och uppdateras inte — serveras som orörda snapshots
    (`region-top25.html`:s Score-kolumn har dock en regen-skript, se nedan).
@@ -225,7 +245,15 @@ följarna och grep-noll-bevisen ligger i `.audits/20261023-0705-full-reaudit/`.
 
 ---
 
-*Uppdaterad: 2026-10-24 (MC 11199 batch B6 — terminal batch: utils-paketet, de döda
+*Uppdaterad: 2026-10-28 (MC 11474 option-B wiring — docs-flip B3/B4-listan: §2 steg 2
+skrivna till ön `nightly_score.score_row → compute_rocket_score` + två pass (D2) +
+C1-indexladdning EN gång per körning + v2-poängsmarkören i steg 5; §3-modultabellen
+fick rader för `nightly_score.py` + `fetch_indices.py` och `app.py`-raden skriven till
+tun delegat; §8.1-punkten om 28/34 vänd — nattningsvägen är 34/34 genom ön (VERIFIED
+34/34 på riktig store-frame), Dash-UI:t är 28/34 i sin EGEN omvandlare-lösa väg och är ett
+öppet follow-up-kort; READMEs score-kedja + social-punkten fliprade till D2-gated +
+KNOWN LIMIT. Tidigare samma dag: MC 11474 B2 wire-commit (se LEDGER). Tidigare:
+2026-10-24 (MC 11199 batch B6 — terminal batch: utils-paketet, de döda
 backtest-modulerna och rot-strays raderade (12 filer/1 485 L); §8-begränsningspunkten
 om den raderade backtest-modulen borttagen och §8 omnumrerad (§8.3-hänvisningar → §8.2),
 §9 och README:s död-kod-punkter skrivna till dåtid; de två dataquality-doksträngarna

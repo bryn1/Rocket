@@ -37,7 +37,9 @@ rocket-demo-publish.timer   (user unit, OnCalendar 05:00 UTC, Persistent=true �
       │                      runs catch up after downtime)
       ▼
 rocket-demo-publish.service (Type=oneshot, TimeoutStartSec=10800 — full-universe nightly,
-      │                      re-derived MC 10220; the 35-era 1800 would kill the full pass)
+      │                      re-derived MC 10220; the 35-era 1800 would kill the full pass.
+      │                      Owner ruling D4 (MC 11474): raise to 14400 (4 h) — the repo
+      │                      edit of TimeoutStartSec + host re-install ride the B4 card.)
       ▼
 source/scripts/generate_demo_page.py
       ├─ entry flock on .demo-publish.lock (store root): a second concurrent run is
@@ -45,8 +47,15 @@ source/scripts/generate_demo_page.py
       ├─ loads the tracked registry (full_universe; charset gate + floors fire BEFORE any
       │  network) — the FULL universe (counts move only via refresh_universe.py; the
       │  current registry epoch is recorded, dated, in LEDGER.md) — then batched
-      │  delta/backfill OHLCV fetch through the store (store_io + bulk_fetcher)
-      ├─ scores all 34 registered indicators per ticker (score_all, Pool(8))
+      │  delta/backfill OHLCV fetch through the store (store_io + bulk_fetcher),
+      │  then ≤4 regime index CSVs (fetch_indices, MC 11545 — a missing index file
+      │  is the tested CHOP×0.5 fallback, never a silent death)
+      ├─ scores all 34 registered indicators per ticker through the 34-indicator
+      │  island (`score_all` Pool(8) → `nightly_score.score_row` →
+      │  `compute_rocket_score`; confidence/risk/regime applied). TWO-pass (D2):
+      │  pass 1 all tickers social=False, pass 2 the preliminary top-500 social=True
+      │   (adapter 2 s/call). KNOWN LIMIT: no sentiment service on this host, so
+      │  social_score stays 0.0 for all until one ships — the gate ships, not the data.
       ├─ redraws the Indikatorer stats WEEKLY (Saturday): deterministic stratified
       │  sample of up to 500 tickers via sample_backtest (Pool(12)); other days the
       │  committed indicator_stats.json is carried with an explicit cadence note

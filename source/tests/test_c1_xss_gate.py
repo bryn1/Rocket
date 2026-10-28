@@ -37,7 +37,12 @@ XSS_TICKER = "<img src=x onerror=1>"
 ATTR_TICKER = 'BRK/A" onmouseover="alert(1)'
 XSS_REGION = 'x"><script>alert(1)</script>'
 
-PAGE_SHA = "098b0018f7c99ab973d4ec542831c99f16160edbd8b7c3f2d791838bdc90bc34"
+# Re-pinned MC 11474 B3 (2026-10-28): this pin proved the escape change (MC 11184)
+# left legit-ticker pages untouched; B3's owner-ratified header lines (v2 marker +
+# KÄND BEGRÄNSNING) legitimately ADD two lines — line-diff HEAD→B3 proves exactly
+# that insertion and nothing else (TABLE_SHA unchanged: table markup and escaping
+# identical; the planted XSS reds below remain the live security gate).
+PAGE_SHA = "a96cbc6669def5d95b936a6b9cc906ec7d5333d2c12718008043505dbcbbd32e"
 TABLE_SHA = "a03e549dcbbfd2046851eb075b349523abdebc54292f714606a6ca08ccf632a1"
 
 

@@ -20,19 +20,21 @@ For each ticker the engine runs **34 technical indicators** across four families
 | Volume     | 3  | OBV, MFI, VWAP |
 
 The **score on the hosted page** is the nightly path
-(`source/scripts/score_all.py` → the `app.py` seam → `scoring/weighter.py`):
-every indicator result is averaged within its family, and the family averages
-are combined as **Momentum 50 % + Trend 35 % + Volume 10 % + Volatility 5 %**
-→ an **Overall score (0–100)** plus per-category sub-scores for Momentum,
-Trend, Volatility and Volume; the row's **BUY / HOLD / SELL** is the majority
-of the per-indicator signals. Stated honestly: the three volatility-family
-indicators (Bollinger Bands, ATR, Donchian Channel) therefore **do** move the
-page score through the 5 % Volatility bucket. The separate
-`source/rocket/scoring/rocket_score.py` path (Dash UI / CLI,
-`compute_rocket_score`) additionally applies confidence, risk and regime
-multipliers and treats those three as risk-only (34 registered / 31 voting
-there) — those multipliers are **never applied on the hosted page**. The full
-indicator list lives in `rocket_score.py` (`INDICATORS`).
+(`source/scripts/score_all.py` → the `nightly_score.py` adapter →
+`compute_rocket_score` in `source/rocket/scoring/rocket_score.py` — owner
+ruling "B", MC 11474; live from the 2026-10-28 nightly, and the page header
+says it: "Rocket-score v2"): the 31 voting indicators drive family consensus,
+and **confidence, risk and regime multipliers are applied to the page
+score**. Stated honestly: the three volatility-family indicators (Bollinger
+Bands, ATR, Donchian Channel) are **risk-only** — they never vote, they feed
+the risk multiplier, and the Volatility sub-score *is* that risk score
+(0–100), not a weight bucket; the row's **BUY / HOLD / SELL** comes from the
+final score's strength thresholds, not a raw per-indicator majority. The
+Overall (0–100) is the island's final score mapped through the weighter's
+0–100 shape (`scoring/weighter.py`, reused). The old `app.py` seam chain is
+retired — `source/app.py` is now a thin delegate into the same 34-indicator
+registry, so the unserved Dash UI cannot carry a disagreeing indicator set.
+The full indicator list lives in `rocket_score.py` (`INDICATORS`).
 
 ## The hosted page is a daily snapshot of the full universe
 
@@ -142,17 +144,26 @@ hosting alias can never expose engine source:
 - `source/` — the engine (not served):
   - `source/scripts/` — the nightly pipeline: `generate_demo_page.py` (orchestrator + entry
     lock), `full_universe.py` (registry loader, charset gate, floors, the ONE constants
-    home), `fetch_store.py` + `store_io.py` (the sole CSV-store writer), `score_all.py`,
-    `sample_backtest.py` + `demo_indicators.py` (weekly Indikatorer branch), `demo_render.py`
+    home), `fetch_store.py` + `store_io.py` (the sole CSV-store writer),
+    `fetch_indices.py` (the ≤4 regime index CSVs, nightly), `score_all.py` (two-pass
+    Pool(8) driver), `nightly_score.py` (the adapter — one mapping authority + explicit
+    D2/D3 kwargs policy), `sample_backtest.py` + `demo_indicators.py` (weekly Indikatorer branch), `demo_render.py`
     (the single HTML-escape point), `demo_publish.py` (publish mechanics), `excluded_tickers.py`
     (delisting exclusion list), `refresh_universe.py` (the ONLY
     registry writer, guarded), `registry_purge.py`
-  - `source/app.py` — the Dash scoring seam the nightly reuses (`_compute_all_indicators`,
-    `_score_from_summary`) and a local Dash UI (engine UI, not served); `source/server.py`
-    is a legacy local-render entry, likewise not served
+  - `source/app.py` — a local Dash UI (engine UI, not served) as **thin
+    delegates** into the 34-indicator island (MC 11474 B2): the nightly never
+    enters this file — scoring authority is `nightly_score.score_row`;
+    `source/server.py` is a legacy local-render entry, likewise not served
   - `source/rocket/scoring/` — the Rocket score (`rocket_score.py`, weighting, risk, confidence)
-  - `source/rocket/social/` — **LIVE** scoring input: `source/rocket/scoring/rocket_score.py:44`
-    imports `..social.sentiment`; the social score feeds every nightly Rocket score
+  - `source/rocket/social/` — **GATED** scoring input (D2, MC 11474): pass 1
+    scores every ticker with social OFF; the nightly re-scores exactly the
+    preliminary **top-500** with social ON, bounded by the adapter's 2 s
+    per-call timeout (`nightly_score.py` — the single choke point; every call
+    site passes the flag explicitly, never a hidden default).
+    **KNOWN LIMIT: this host runs no sentiment service, so `social_score`
+    stays 0.0 for everyone until one ships — the wiring ships the gate, not
+    the data.**
   - `source/rocket/technical/` — the 34 indicator implementations
   - `source/rocket/data/` — the tracked registry `universe_cache.json` (never rebuilt nightly;
     see `refresh_universe.py`), batched fetching, the class-share request form
