@@ -29,7 +29,7 @@ HTML = render_html()
 STATS_JSON = json.dumps({"schema_version": 1})
 MARKERS = [demo_render.BANNER_MARKER, demo_render.TAB_ALL_MARKER,
            demo_render.INDICATOR_TAB_MARKER, demo_render.PANEL_ALL_MARKER,
-           demo_render.PANEL_PREFIX + 'usa"']
+           demo_render.PANEL_PREFIX + 'usa"', demo_render.SCORE_V2_MARKER]
 
 
 def _git(cwd, *args, check=True):

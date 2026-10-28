@@ -1,16 +1,21 @@
 """The golden-35 continuity pin and the FROZEN store it runs on (MC 10304).
 
-§3 test (b) of MC 10223 — the 35 demo tickers must score EXACTLY as published
-at f2c02f6 — moved here from test_demo_page_generator.py, because the pin is
-only a claim about that data state while the bytes behind it are pinned too:
+v2 determinism pin (owner ruling B; wire commit MC 11474, PLAN-c3 §4): the
+literals are ``compute_rocket_score`` outputs scored off the frozen bytes as
+of the wire date; correctness evidence is the delta table in
+``.audits/202610272245-wirebuild/out/``, NOT this pin. The pin proves
+DETERMINISM of the wired path, never its correctness — the old "must score
+EXACTLY as published at f2c02f6" claim retired with the seam (F2 law: no
+re-pinned literal wears the old provenance).
 
 * ``fx.GOLDEN35_DIR`` (tests/data/golden35) is the 35 CSVs as the nightly
   store held them on 2026-10-07, committed as test DATA. The pin scores
   THESE bytes and never the live store at source/data/raw: the nightly
   rewrites that dir daily and scores legitimately move with it (VERIFIED
-  2026-10-08: the refetched store scored MSFT 59.8 against the pinned 57.8).
+  2026-10-08: the refetched store scored MSFT 59.8 against the then-pinned
+  57.8).
 * ``SHA256SUMS`` (one manifest, 35 hashes) byte-locks the store, and the
-  mutation tests below prove that lock goes RED — so "f2c02f6 data state"
+  mutation tests below prove that lock goes RED — so "the frozen data state"
   is a checked claim, not a hope.
 
 No network, no live store: nothing in this module needs source/data/raw to
@@ -36,25 +41,28 @@ from demo_page_fixtures import GOLDEN35_DIR, GOLDEN_35    # noqa: E402
 MANIFEST = "SHA256SUMS"                  # sha256sum -c format, DATA not logic
 
 
-# ── the pin: §3 test (b), scored off the frozen fixture store ───────────────
+# ── the pin: v2 determinism, scored off the frozen fixture store ────────────
 
-def test_golden35_scores_unchanged_by_region_map():
-    """The 35 demo tickers score EXACTLY as published at f2c02f6 through the
-    same app seam (usa/sweden/germany mappings kept), off fx.GOLDEN35_DIR.
+def test_golden35_deterministic_via_wired_path():
+    """v2 determinism pin — literals are compute_rocket_score outputs scored
+    off the frozen bytes as of the wire date; correctness evidence is the
+    delta table in .audits/202610272245-wirebuild/out/, NOT this pin (owner
+    ruling B; wire commit MC 11474). Pin scope: the literals are
+    single-ticker `social=False`, `index_df=None` outputs — exactly the flags
+    passed here, so the nightly index feed cannot move the pin (PLAN-c3 §4).
     NO skip path: the fixture is committed, so a missing CSV is a RED."""
-    import app
-    from rocket.backtest.indicator_eval import to_indicator_frame
+    import nightly_score
+    from full_universe import cache_filename
     region_of = lambda t: ("sweden" if t.endswith(".ST")
                            else "germany" if t.endswith(".DE") else "usa")
     for ticker, expected in GOLDEN_35.items():
-        path = GOLDEN35_DIR / full_universe.cache_filename(ticker)
+        path = GOLDEN35_DIR / cache_filename(ticker)
         assert path.exists(), f"frozen golden-35 fixture missing: {path}"
         df = store_io.read_cache(path)
-        idf = to_indicator_frame(df)
-        summary, _ = app._compute_all_indicators(idf)
-        rs = app._score_from_summary(summary, ticker=ticker,
-                                     region=region_of(ticker))["rocket_score"]
-        assert f"{rs.overall_score:.1f}" == expected, ticker
+        row = nightly_score.score_row(df, ticker, region_of(ticker),
+                                      social=False, index_df=None,
+                                      index_name="^GSPC")
+        assert f"{row['overall']:.1f}" == expected, ticker
 
 
 # ── byte-lock manifest: the store is the f2c02f6 bytes, or the suite is RED ─
@@ -147,4 +155,4 @@ def test_golden35_pin_ignores_a_live_store_that_drifted(monkeypatch, tmp_path):
     mutate_one_bar(live / "MSFT.csv")
     monkeypatch.setattr(full_universe, "CACHE_DIR", live)
     monkeypatch.setattr(store_io, "CACHE_DIR", live)
-    test_golden35_scores_unchanged_by_region_map()      # stays GREEN
+    test_golden35_deterministic_via_wired_path()      # stays GREEN

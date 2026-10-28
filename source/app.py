@@ -20,15 +20,9 @@ from rocket.data.fetcher import fetch_ohlcv
 from rocket.data.storage import load_ohlcv, save_ohlcv
 from rocket.data.models import TickerInfo, Region
 from rocket.data.universe_regions import REGION_META
-from rocket.technical.momentum import (RSI, MACD, Stochastic, WilliamsR,
-                                        ROC, CCI)
-from rocket.technical.trend import (EMA9, EMA21, EMA50, EMA200,
-                                     EMACrossover, ADX)
-from rocket.technical.volatility import BollingerBands, ATR, DonchianChannel
-from rocket.technical.volume import OBV, MFI, VWAPIndicator
-from rocket.technical.advanced import IchimokuCloud, Supertrend, ParabolicSAR
 from rocket.technical.signal_combiner import SignalCombiner, SignalSummary
 from rocket.technical.models import Signal
+from rocket.scoring import rocket_score             # island (DELEGATE at :55)
 from rocket.scoring.weighter import weight_scores
 from rocket.scoring.filter import apply_filters
 from rocket.plotting.candlestick import create_candlestick
@@ -52,14 +46,14 @@ BASE_DIR = Path(__file__).resolve().parent
 DATA_DIR = str(BASE_DIR / "data" / "raw")
 DEFAULT_REGIONS = ["usa"]
 
-# All indicator instances (reuse from rocket.scoring.rocket_score)
-INDICATORS = [
-    RSI(), MACD(), Stochastic(), WilliamsR(), ROC(), CCI(),
-    EMA9(), EMA21(), EMA50(), EMA200(), EMACrossover(), ADX(),
-    BollingerBands(), ATR(), DonchianChannel(),
-    OBV(), MFI(), VWAPIndicator(),
-    IchimokuCloud(), Supertrend(), ParabolicSAR(),
-]
+# All indicator instances (reuse from rocket.scoring.rocket_score) —
+# DELEGATE (MC 11474 B2, PLAN-c3 §3): the 34-indicator island registry lives
+# in rocket/scoring/rocket_score.py and is the ONE indicator authority. The
+# 21-instance list this line held is retired, NOT kept as a beside sub-score;
+# the reuse this comment always claimed is literally true after the
+# delegation (the published score itself comes from nightly_score.score_row
+# via scripts/score_all.py — never from this UI file).
+INDICATORS = rocket_score.INDICATORS
 
 # Create Dash app
 app = Dash(
@@ -74,7 +68,12 @@ app = Dash(
 # ========================
 
 def _compute_all_indicators(df: pd.DataFrame):
-    """Run all indicator instances on df. Return (SignalSummary, list[IndicatorResult])."""
+    """Thin DELEGATE (MC 11474 B2, PLAN-c3 §3): runs the island's OWN
+    34-indicator registry (:55) + combiner — the same step-1 the island takes
+    inside compute_rocket_score, so the unserved Dash UI cannot carry a
+    disagreeing indicator set. Scoring authority is NOT here: the published
+    score comes from scripts/nightly_score.score_row via scripts/score_all.py.
+    Return (SignalSummary, list[IndicatorResult])."""
     results = []
     for indicator in INDICATORS:
         try:
@@ -141,7 +140,14 @@ _assert_region_map(_REGION_MAP, REGION_META)
 
 
 def _score_from_summary(summary, ticker: str = "", region: str = "us", sector: str = "") -> Dict:
-    """Compute full RocketScore from a SignalSummary (with dummy ticker info)."""
+    """Thin DELEGATE (MC 11474 B2, PLAN-c3 §3): kept for the unserved Dash
+    UI's call shape — no independent scoring authority lives in this file
+    anymore (:55 runs the island's own registry). What this returns is the
+    legacy weighter's view of the island's own combiner summary — the same
+    computation compute_rocket_score keeps internally for backward
+    compatibility (rocket_score.py:443-447) — so the UI cannot disagree with
+    it. The PUBLISHED score is nightly_score.score_row's row, never this one.
+    Region resolution stays LOUD for unmapped registry keys (F1, MC 10223)."""
     legacy_region = _REGION_MAP.get(region.lower(), region.upper())
     ticker_info = TickerInfo(ticker=ticker, region=Region(legacy_region))
     filter_result = apply_filters(ticker_info, 0.0)

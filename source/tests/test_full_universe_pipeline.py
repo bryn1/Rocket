@@ -202,7 +202,7 @@ def test_g3_markers_generated_from_plan_not_literal(floors_patched):
     grown = full_universe_plan(extra=(("brazil", ["BR1", "BR2", "BR3"]),))
     ms = gen._markers(grown)
     assert f'{demo_render.PANEL_PREFIX}brazil"' in ms
-    assert len(ms) == 4 + len(grown.order)   # every tab, never a fixed list
+    assert len(ms) == 5 + len(grown.order)   # base 4 + v2 marker (MC 11474 B3) + every tab, never a fixed list
     reasons = gen._guard(_html(), grown, _scored_assignments(grown),
                          _scored_for(grown), FRESH_BAR, _iso(NOW), FRESH_BAR)
     assert any('id="panel-brazil"' in r for r in reasons)

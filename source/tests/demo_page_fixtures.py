@@ -135,18 +135,22 @@ def html(doc=None, results=None, bar=FRESH_BAR, note=None):
 # daily and a moving store turns a continuity pin into a daily time-bomb.
 GOLDEN35_DIR = Path(__file__).resolve().parent / "data" / "golden35"
 
-# Golden pin (the ONE allowed absolute pin — it IS the f2c02f6 published
-# page): rendered 1-decimal Overall of the live page rows at f2c02f6,
-# reproduced ONLY off GOLDEN35_DIR (see test_golden35_fixtures.py).
+# v2 determinism pin (MC 11474 B2). The literals are compute_rocket_score
+# outputs scored off the frozen bytes (GOLDEN35_DIR) as of the wire date;
+# correctness evidence is the delta table in
+# .audits/202610272245-wirebuild/out/, NOT this pin (owner ruling B; wire
+# commit MC 11474). Pin scope: the literals are single-ticker `social=False`,
+# `index_df=None` outputs — the regen command passes exactly those flags, so
+# the nightly index feed cannot move the pin (PLAN-c3 §4, F1/C1).
 GOLDEN_35 = {
-    "MSFT": "57.8", "DIS": "45.8", "WMT": "48.8", "NVDA": "52.6",
-    "XOM": "58.8", "CSCO": "55.6", "AMZN": "60.7", "MA": "53.6",
-    "BAC": "41.9", "JPM": "43.2", "CRM": "40.8", "HD": "38.1",
-    "PG": "58.5", "ADBE": "43.3", "JNJ": "48.6", "V": "55.9",
-    "AAPL": "51.2", "META": "60.9", "GOOGL": "60.4", "UNH": "53.8",
-    "SAAB-B.ST": "64.2", "ATCO-A.ST": "62.3", "SEB-A.ST": "54.3",
-    "ASSA-B.ST": "54.9", "SWED-A.ST": "57.5", "ERIC-B.ST": "45.3",
-    "SAP.DE": "51.3", "DBK.DE": "39.0", "ALV.DE": "41.0", "SIE.DE": "60.5",
-    "DTE.DE": "43.9", "BMW.DE": "39.1", "BAS.DE": "43.9", "VOW3.DE": "45.7",
-    "IFX.DE": "62.8"}
+    "MSFT": "53.8", "DIS": "49.7", "WMT": "47.7", "NVDA": "52.8",
+    "XOM": "58.1", "CSCO": "54.8", "AMZN": "56.5", "MA": "52.2",
+    "BAC": "49.0", "JPM": "50.0", "CRM": "48.2", "HD": "43.4",
+    "PG": "52.9", "ADBE": "42.6", "JNJ": "49.8", "V": "51.4",
+    "AAPL": "51.3", "META": "54.9", "GOOGL": "53.1", "UNH": "51.4",
+    "SAAB-B.ST": "56.7", "ATCO-A.ST": "54.2", "SEB-A.ST": "50.1",
+    "ASSA-B.ST": "52.8", "SWED-A.ST": "52.1", "ERIC-B.ST": "43.9",
+    "SAP.DE": "50.5", "DBK.DE": "48.4", "ALV.DE": "48.3", "SIE.DE": "52.7",
+    "DTE.DE": "45.0", "BMW.DE": "44.2", "BAS.DE": "49.0", "VOW3.DE": "47.5",
+    "IFX.DE": "55.1"}
 assert len(GOLDEN_35) == 35
