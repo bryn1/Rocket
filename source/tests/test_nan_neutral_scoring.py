@@ -2,10 +2,11 @@
 
 Fix: ``rocket/technical/base.py normalize_score`` coerces NaN to neutral 0.0
 (NaN slips through both max and min, so the bare clamp turned it into +1.0).
-The page-score path is the shipped seam ``app._compute_all_indicators`` +
-``app._score_from_summary`` (same seam as scripts/score_all.py and the
-golden-35 pin) — no source/data needed here: the real-ticker pins run on the
-committed frozen store tests/data/golden35.
+The page-score path is the WIRED island seam ``nightly_score.score_row``
+(MC 11474 B2, PLAN-c3 §3 — the same seam scripts/score_all.py runs nightly;
+the old app._compute_all_indicators seam retired with the wire commit) — no
+source/data needed here: the real-ticker pins run on the committed frozen
+store tests/data/golden35.
 
 Red/green record (planted-bad run done on the pre-fix tree, 2026-10-23):
   * normalize_score(nan)              pre-fix 1.0  -> post-fix 0.0
@@ -13,9 +14,10 @@ Red/green record (planted-bad run done on the pre-fix tree, 2026-10-23):
     (the audit's d3 P1.4 frame scored 70.77 — the "~70.8" of the finding;
     the exact number is frame-shape dependent, the disease is not)
   * 1-bar all-NaN page score          pre-fix 60.28 -> post-fix 50.0
-Honest neutral, not 50.0: MFI masks NaN flows to 0 with .where(...) and reads
-0.0 "oversold" -> BUY 1.0 (volume family avg 0.3333). That NaN masking is a
-separate finding from F1 (normalize_score) and stays out of this fix's scope.
+Those two page numbers are the OLD seam's history; through the wired island
+the honest-neutral values are 49.82 (30 bars) and 49.685 (1 bar) — pinned
+below; the disease (NaN -> bullish max) is what the unit guard pins, and it
+holds on every seam.
 """
 from __future__ import annotations
 
@@ -42,11 +44,11 @@ def _nan_frame(n: int) -> pd.DataFrame:
 
 
 def _page_score(df: pd.DataFrame, ticker: str = "NANTEST", region: str = "usa"):
-    """Score through the shipped page seam (identical to scripts/score_all.py)."""
-    import app
-    summary, _ = app._compute_all_indicators(df)
-    return app._score_from_summary(summary, ticker=ticker,
-                                   region=region)["rocket_score"]
+    """Score through the WIRED page seam (nightly_score.score_row — the seam
+    scripts/score_all.py runs nightly; MC 11474 B2). Returns the row dict."""
+    import nightly_score
+    return nightly_score.score_row(df, ticker, region, social=False,
+                                   index_df=None, index_name="^GSPC")
 
 
 # ── the unit guard: NaN -> neutral, never max ───────────────────────────────
@@ -67,47 +69,48 @@ def test_normalize_score_reals_and_inf_clamp_unchanged():
     assert normalize_score(float("-inf")) == -1.0
 
 
-# ── regression: degenerate frames score honest neutral on the page path ─────
+# ── regression: degenerate frames score honest neutral on the wired path ────
 
-def test_all_nan_frame_page_score_is_neutral_51_67_not_bullish():
-    """30-bar all-NaN frame: pre-fix 79.44 (audit frame shape: ~70.8);
-    post-fix the honest neutral is 51.67 — see module docstring for why the
-    residual +1.67 is MFI .where-masking, not normalize_score."""
-    rs = _page_score(_nan_frame(30))
-    assert rs.overall_score == 51.67, rs.overall_score
-    assert rs.overall_score < 55.0, "all-NaN must not read as a bullish page score"
+def test_all_nan_frame_page_score_is_neutral_49_82_not_bullish():
+    """30-bar all-NaN frame through the wired island: 49.82 — the island's
+    honest neutral (old seam pinned 51.67, MC 11185 history in the module
+    docstring). < 55 is the disease guard, not the literal."""
+    row = _page_score(_nan_frame(30))
+    assert row["overall"] == 49.82, row["overall"]
+    assert row["overall"] < 55.0, "all-NaN must not read as a bullish page score"
 
 
-def test_single_nan_bar_page_score_is_exact_neutral_50_0():
-    """Empty-history case (1 NaN bar): pre-fix 60.28, post-fix exactly 50.0."""
-    rs = _page_score(_nan_frame(1))
-    assert rs.overall_score == 50.0, rs.overall_score
+def test_single_nan_bar_page_score_is_exact_neutral_49_685():
+    """Empty-history case (1 NaN bar): old seam pinned 60.28 pre-fix / 50.0
+    post-fix (MC 11185); through the wired island the exact honest neutral
+    is 49.685 — never a bullish max."""
+    row = _page_score(_nan_frame(1))
+    assert row["overall"] == 49.685, row["overall"]
 
 
 # ── non-NaN scoring must not move: full-precision pins, frozen fixtures ─────
 
 def test_real_ticker_scores_full_precision_unchanged():
     """The golden-35 pin rounds to .1f; this pins the SAME frozen store bytes
-    at full float precision across BOTH scorers, so any drift off the F1 fix
-    (verified byte-equal pre/post, 2026-10-23) goes RED at repr level."""
-    import app
+    at full float precision through the WIRED seam (v2, MC 11474 B2), so any
+    drift off the island path goes RED at repr level — the values are
+    deterministic (B1: test_golden35_deterministic_twice_via_adapter)."""
+    import nightly_score
     import store_io
     import full_universe
-    from rocket.backtest.indicator_eval import to_indicator_frame
     pins = {
-        "MSFT":      ("usa",    57.83, 0.0945, 0.1561, 0.2337, 0.4312),
-        "SAAB-B.ST": ("sweden", 64.23, 0.402,  0.1623, 0.3116, 0.1116),
-        "BMW.DE":    ("germany", 39.13, -0.2459, -0.1998, -0.3415, -0.0735),
+        "MSFT":      ("usa",    53.805, 56.25, 55.00000000000001, 3.0, 83.33500000000001),
+        "SAAB-B.ST": ("sweden", 56.66,  62.5,  67.5,              3.0, 83.33500000000001),
+        "BMW.DE":    ("germany", 44.214999999999996, 62.5, 67.5,  3.0, 66.66499999999999),
     }
     for ticker, (region, overall, mom, trend, vol, volm) in pins.items():
         path = GOLDEN35_DIR / full_universe.cache_filename(ticker)
         assert path.exists(), f"frozen golden-35 fixture missing: {path}"
-        idf = to_indicator_frame(store_io.read_cache(path))
-        summary, _ = app._compute_all_indicators(idf)
-        rs = app._score_from_summary(summary, ticker=ticker,
-                                     region=region)["rocket_score"]
-        assert rs.overall_score == overall, ticker
-        assert (summary.momentum_score, summary.trend_score,
-                summary.volatility_score, summary.volume_score) == (mom, trend, vol, volm), ticker
+        row = nightly_score.score_row(store_io.read_cache(path), ticker, region,
+                                      social=False, index_df=None,
+                                      index_name="^GSPC")
+        assert row["overall"] == overall, ticker
+        assert (row["momentum"], row["trend"],
+                row["volatility"], row["volume"]) == (mom, trend, vol, volm), ticker
         # the published golden string still holds (cross-check, not a re-pin)
-        assert f"{rs.overall_score:.1f}" == GOLDEN_35[ticker], ticker
+        assert f"{row['overall']:.1f}" == GOLDEN_35[ticker], ticker
